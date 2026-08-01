@@ -6,14 +6,16 @@ use Filament\Tables\Contracts\HasTable;
 use GiacomoMasseroni\AsyncColumn\Columns\AsyncColumn;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Model;
+use LogicException;
 use Throwable;
 
 /**
  * Turns a batch of client-supplied cell tokens into rendered HTML.
  *
  * This is the package's security boundary: tokens arrive from the browser and are
- * therefore attacker-controllable. Two rules keep a forged token from reaching data
- * the requesting user could not already see:
+ * therefore attacker-controllable. The following rules keep a forged token from
+ * reaching data, or even the existence of a column, the requesting user could not
+ * already see:
  *
  *  - Records are hydrated exclusively through the table's OWN query
  *    ($table->getQuery()->whereKey(...)), never Model::find(). Tenancy, global
@@ -23,6 +25,17 @@ use Throwable;
  *  - Only columns that are actually defined on the table (and are AsyncColumn
  *    instances) are resolved. An unknown or mistyped column name is silently
  *    dropped rather than turned into an error that could leak table structure.
+ *  - A column that exists but is currently hidden ($column->isVisible() === false)
+ *    or toggled off by the user ($column->isToggledHidden() === true) is rejected
+ *    the same way. getColumn() returns every registered column regardless of
+ *    visibility, so without this check a forged token could reveal a value the
+ *    table itself never rendered a placeholder for.
+ *
+ * The incoming token array is also capped at config('async-column.max_batch_size')
+ * (truncated, never an error) so a single request cannot force arbitrarily many
+ * resolver invocations, and a failure while hydrating a column's records (as
+ * opposed to a failure inside one resolver) degrades that column's cells to error
+ * cells instead of aborting the whole batch.
  */
 class BatchResolver
 {
@@ -33,6 +46,12 @@ class BatchResolver
     public function resolve(HasTable $component, array $tokens): array
     {
         $table = $component->getTable();
+
+        $maxBatchSize = (int) config('async-column.max_batch_size', 200);
+
+        if ($maxBatchSize > 0) {
+            $tokens = array_slice($tokens, 0, $maxBatchSize);
+        }
 
         // Group valid tokens by column, keyed by the (still-untrusted) record key,
         // so each column's records can be loaded in a single query. The resolved
@@ -60,6 +79,14 @@ class BatchResolver
                 continue;
             }
 
+            // getColumn() returns every registered column regardless of whether
+            // it is currently visible or has been toggled off by the user. A
+            // hidden or toggled-off column never rendered a placeholder in the
+            // first place, so a forged token for it must produce nothing too.
+            if ((! $column->isVisible()) || $column->isToggledHidden()) {
+                continue;
+            }
+
             $groups[$token->columnName]['column'] ??= $column;
             $groups[$token->columnName]['tokens'][$token->recordKey] = $rawToken;
         }
@@ -73,10 +100,25 @@ class BatchResolver
                 continue;
             }
 
-            // Hydrate through the table's OWN query, so tenancy, global scopes and
-            // every table constraint apply. A forged record key cannot reach a row
-            // the user could not already see — it simply never comes back here.
-            $records = $query->whereKey(array_keys($tokensByRecordKey))->get();
+            try {
+                // Hydrate through the table's OWN query, so tenancy, global scopes
+                // and every table constraint apply. A forged record key cannot
+                // reach a row the user could not already see — it simply never
+                // comes back here.
+                $records = $query->whereKey(array_keys($tokensByRecordKey))->get();
+            } catch (Throwable $exception) {
+                // A query-level failure (bad connection, broken constraint, ...)
+                // must not abort the whole batch any more than a single failing
+                // resolver does — every cell in this column degrades to an error
+                // cell instead.
+                report($exception);
+
+                foreach ($tokensByRecordKey as $rawToken) {
+                    $cells[$rawToken] = $this->buildErrorCell($column, $exception);
+                }
+
+                continue;
+            }
 
             foreach ($records as $record) {
                 $recordKey = $table->getRecordKey($record);
@@ -118,15 +160,27 @@ class BatchResolver
             // config, Sentry, etc. behave exactly as they would anywhere else.
             report($exception);
 
-            $errorState = $cell->getErrorState($exception);
-
-            return [
-                'html' => $errorState instanceof Htmlable
-                    ? $errorState->toHtml()
-                    : e((string) $errorState),
-                'error' => true,
-            ];
+            return $this->buildErrorCell($cell, $exception);
         }
+    }
+
+    /**
+     * @return array{html: string, error: bool}
+     */
+    protected function buildErrorCell(AsyncColumn $column, Throwable $exception): array
+    {
+        // The exception is only ever exposed to an explicit developer callback
+        // (errorStateUsing()) via getErrorState(). Never interpolate $exception
+        // or its message directly here — resolvers hit APIs with credentials in
+        // URLs and databases that echo SQL back in their error messages.
+        $errorState = $column->getErrorState($exception);
+
+        return [
+            'html' => $errorState instanceof Htmlable
+                ? $errorState->toHtml()
+                : e((string) $errorState),
+            'error' => true,
+        ];
     }
 
     protected function resolveState(AsyncColumn $column, Model $record): mixed
@@ -134,7 +188,7 @@ class BatchResolver
         $resolver = $column->getResolveUsing();
 
         if ($resolver === null) {
-            throw new \LogicException(
+            throw new LogicException(
                 'AsyncColumn ['.$column->getName().'] has no resolver. Call resolveUsing() when defining the column.'
             );
         }

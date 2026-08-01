@@ -7,6 +7,7 @@ use GiacomoMasseroni\AsyncColumn\Resolution\CellToken;
 use GiacomoMasseroni\AsyncColumn\Tests\Fixtures\Post;
 use GiacomoMasseroni\AsyncColumn\Tests\Fixtures\PostsTable;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Livewire\Livewire;
 
 function tokensFor(string $column, iterable $posts): array
@@ -79,7 +80,10 @@ it('never leaks the exception message by default', function (): void {
 
     $result = app(BatchResolver::class)->resolve($component, tokensFor('slow', [$bad]));
 
-    expect(json_encode($result))->not->toContain('secret-api-key-12345');
+    // Assert a cell was actually produced (and is clean) — not merely that an
+    // empty payload happens not to contain the secret.
+    expect($result['cells'])->toHaveCount(1)
+        ->and(json_encode($result))->not->toContain('secret-api-key-12345');
 });
 
 it('refuses tokens for records outside the table query', function (): void {
@@ -128,10 +132,106 @@ it('ignores a token for a column that exists but is not an AsyncColumn', functio
 
     $component = Livewire::test(PostsTable::class)->instance();
 
-    $result = app(BatchResolver::class)->resolve($component, [
-        (new CellToken('title', (string) $post->getKey()))->encode(),
-        (new CellToken('slow', (string) $post->getKey()))->encode(),
-    ]);
+    $titleToken = (new CellToken('title', (string) $post->getKey()))->encode();
+    $slowToken = (new CellToken('slow', (string) $post->getKey()))->encode();
 
-    expect($result['cells'])->toHaveCount(1);
+    $result = app(BatchResolver::class)->resolve($component, [$titleToken, $slowToken]);
+
+    // Not just "one cell survived" — specifically the AsyncColumn's cell, not
+    // the plain TextColumn's.
+    expect($result['cells'])->toHaveKey($slowToken)
+        ->and($result['cells'])->not->toHaveKey($titleToken)
+        ->and($result['cells'])->toHaveCount(1);
+});
+
+it('refuses a token for a column that is hidden or toggled off', function (): void {
+    $post = Post::create(['title' => 'One']);
+
+    $visibleFalseCalls = 0;
+    $hiddenCalls = 0;
+    $toggledOffCalls = 0;
+
+    PostsTable::$columns = [
+        AsyncColumn::make('secret')
+            ->visible(false)
+            ->resolveUsing(function () use (&$visibleFalseCalls): string {
+                $visibleFalseCalls++;
+
+                return 'v';
+            }),
+        AsyncColumn::make('hush')
+            ->hidden()
+            ->resolveUsing(function () use (&$hiddenCalls): string {
+                $hiddenCalls++;
+
+                return 'v';
+            }),
+        AsyncColumn::make('toggled')
+            ->toggleable()
+            ->resolveUsing(function () use (&$toggledOffCalls): string {
+                $toggledOffCalls++;
+
+                return 'v';
+            }),
+    ];
+
+    $component = Livewire::test(PostsTable::class)->instance();
+
+    // Toggle the third column off through the same public API the column
+    // manager UI uses, so the test exercises real toggle state rather than a
+    // hand-rolled stand-in for it.
+    $state = $component->getDefaultTableColumnState();
+    $state[2]['isToggled'] = false;
+    $component->applyTableColumnManager($state);
+
+    $tokens = [
+        (new CellToken('secret', (string) $post->getKey()))->encode(),
+        (new CellToken('hush', (string) $post->getKey()))->encode(),
+        (new CellToken('toggled', (string) $post->getKey()))->encode(),
+    ];
+
+    $result = app(BatchResolver::class)->resolve($component, $tokens);
+
+    expect($result['cells'])->toBeEmpty()
+        ->and($visibleFalseCalls)->toBe(0)
+        ->and($hiddenCalls)->toBe(0)
+        ->and($toggledOffCalls)->toBe(0);
+});
+
+it('truncates an over-cap batch to the configured max_batch_size', function (): void {
+    config(['async-column.max_batch_size' => 2]);
+
+    $posts = collect(range(1, 5))->map(fn (int $i) => Post::create(['title' => "Post {$i}"]));
+
+    PostsTable::$columns = [
+        AsyncColumn::make('slow')->resolveUsing(fn (Post $record): string => 'v-'.$record->getKey()),
+    ];
+
+    $component = Livewire::test(PostsTable::class)->instance();
+
+    $result = app(BatchResolver::class)->resolve($component, tokensFor('slow', $posts));
+
+    expect($result['cells'])->toHaveCount(2);
+});
+
+it('degrades a column to error cells when hydration itself fails, instead of throwing', function (): void {
+    $post = Post::create(['title' => 'One']);
+
+    PostsTable::$columns = [
+        AsyncColumn::make('slow')->resolveUsing(fn (): string => 'v'),
+    ];
+
+    $component = Livewire::test(PostsTable::class)->instance();
+
+    // Break the table's own query only AFTER the component has already mounted
+    // and rendered successfully, so it's specifically the resolver's hydration
+    // call that fails — not table setup.
+    Schema::drop('posts');
+
+    $token = (new CellToken('slow', (string) $post->getKey()))->encode();
+
+    $result = app(BatchResolver::class)->resolve($component, [$token]);
+
+    expect($result['cells'][$token]['error'])->toBeTrue()
+        ->and(json_encode($result))->not->toContain('no such table');
 });
