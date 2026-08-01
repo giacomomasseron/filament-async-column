@@ -1,6 +1,7 @@
 <?php
 
 use GiacomoMasseroni\AsyncColumn\Columns\AsyncColumn;
+use GiacomoMasseroni\AsyncColumn\Resolution\CellToken;
 use GiacomoMasseroni\AsyncColumn\Tests\Fixtures\Post;
 use GiacomoMasseroni\AsyncColumn\Tests\Fixtures\PostsTable;
 use Livewire\Livewire;
@@ -34,7 +35,7 @@ it('emits one placeholder carrying a decodable token per row', function (): void
 
     $html = Livewire::test(PostsTable::class)->html();
 
-    $expected = (new \GiacomoMasseroni\AsyncColumn\Resolution\CellToken('slow', (string) $post->getKey()))->encode();
+    $expected = (new CellToken('slow', (string) $post->getKey()))->encode();
 
     expect($html)->toContain('data-async-column-token="'.$expected.'"');
 });

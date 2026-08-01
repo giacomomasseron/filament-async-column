@@ -4,6 +4,7 @@ namespace GiacomoMasseroni\AsyncColumn\Livewire;
 
 use Filament\Tables\Contracts\HasTable;
 use GiacomoMasseroni\AsyncColumn\Resolution\BatchResolver;
+use Livewire\Component;
 use Livewire\ComponentHook;
 
 /**
@@ -35,10 +36,20 @@ class AsyncColumnHook extends ComponentHook
             return;
         }
 
+        // ComponentHook::$component (declared in vendor/livewire/livewire, see the
+        // class docblock above) is untyped, so an `instanceof HasTable` narrows
+        // PHPStan's view of it to the HasTable *interface* only — losing the fact
+        // that, at runtime, it is always also the hosting Livewire\Component
+        // instance (skipRender() below lives on Component, not on HasTable). This
+        // local re-declares both halves of that real, dual type explicitly instead
+        // of suppressing the resulting "undefined method" finding.
+        /** @var Component&HasTable $component */
+        $component = $this->component;
+
         $tokens = $params[0] ?? [];
 
         $result = app(BatchResolver::class)->resolve(
-            $this->component,
+            $component,
             is_array($tokens) ? $tokens : [],
         );
 
@@ -46,7 +57,7 @@ class AsyncColumnHook extends ComponentHook
         // response carries only the token->HTML map, the table query is never
         // re-run, and the cells we already injected on the client survive
         // untouched instead of being fought by a DOM morph.
-        $this->component->skipRender();
+        $component->skipRender();
 
         $returnEarly($result);
     }

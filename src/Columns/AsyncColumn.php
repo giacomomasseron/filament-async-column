@@ -17,15 +17,15 @@ class AsyncColumn extends TextColumn
 {
     protected ?Closure $resolveUsing = null;
 
-    protected string | Htmlable | Closure | null $loadingState = null;
+    protected string|Htmlable|Closure|null $loadingState = null;
 
-    protected string | Htmlable | Closure | null $errorState = null;
+    protected string|Htmlable|Closure|null $errorState = null;
 
-    protected bool | Closure $loadsWhenVisible = false;
+    protected bool|Closure $loadsWhenVisible = false;
 
-    protected bool | Closure $isRetryable = true;
+    protected bool|Closure $isRetryable = true;
 
-    protected int | CarbonInterface | Closure | null $cacheTtl = null;
+    protected int|CarbonInterface|Closure|null $cacheTtl = null;
 
     protected mixed $cacheVersion = null;
 
@@ -41,7 +41,7 @@ class AsyncColumn extends TextColumn
         return $this->resolveUsing;
     }
 
-    public function loadingState(string | Htmlable | Closure | null $state): static
+    public function loadingState(string|Htmlable|Closure|null $state): static
     {
         $this->loadingState = $state;
 
@@ -53,13 +53,13 @@ class AsyncColumn extends TextColumn
         return $this->loadingState($callback);
     }
 
-    public function getLoadingState(): string | Htmlable | null
+    public function getLoadingState(): string|Htmlable|null
     {
         return $this->evaluate($this->loadingState)
             ?? new HtmlString('<span class="fi-async-column-skeleton" aria-hidden="true"></span>');
     }
 
-    public function errorState(string | Htmlable | Closure | null $state): static
+    public function errorState(string|Htmlable|Closure|null $state): static
     {
         $this->errorState = $state;
 
@@ -71,7 +71,7 @@ class AsyncColumn extends TextColumn
         return $this->errorState($callback);
     }
 
-    public function getErrorState(?Throwable $exception = null): string | Htmlable | null
+    public function getErrorState(?Throwable $exception = null): string|Htmlable|null
     {
         // The exception is only ever exposed to an explicit developer callback.
         // Defaulting to $exception->getMessage() would leak API credentials and SQL.
@@ -80,7 +80,7 @@ class AsyncColumn extends TextColumn
         return $state ?? __('async-column::async-column.error');
     }
 
-    public function whenVisible(bool | Closure $condition = true): static
+    public function whenVisible(bool|Closure $condition = true): static
     {
         $this->loadsWhenVisible = $condition;
 
@@ -92,7 +92,7 @@ class AsyncColumn extends TextColumn
         return (bool) $this->evaluate($this->loadsWhenVisible);
     }
 
-    public function retryable(bool | Closure $condition = true): static
+    public function retryable(bool|Closure $condition = true): static
     {
         $this->isRetryable = $condition;
 
@@ -104,14 +104,14 @@ class AsyncColumn extends TextColumn
         return (bool) $this->evaluate($this->isRetryable);
     }
 
-    public function cacheFor(int | CarbonInterface | Closure | null $ttl): static
+    public function cacheFor(int|CarbonInterface|Closure|null $ttl): static
     {
         $this->cacheTtl = $ttl;
 
         return $this;
     }
 
-    public function getCacheTtl(): int | CarbonInterface | null
+    public function getCacheTtl(): int|CarbonInterface|null
     {
         return $this->evaluate($this->cacheTtl);
     }
@@ -175,7 +175,7 @@ class AsyncColumn extends TextColumn
      * weight, prefix/suffix etc. all behave exactly as they would on a normal
      * TextColumn, instead of a hand-rolled subset of that behavior.
      */
-    public function renderResolvedHtml(Model | array $record, mixed $state): string
+    public function renderResolvedHtml(Model|array $record, mixed $state): string
     {
         $this->record($record);
         $this->resolvedState($state);
@@ -214,6 +214,12 @@ class AsyncColumn extends TextColumn
             return '';
         }
 
+        // Larastan's view-string type calls view()->exists() against the Laravel
+        // app IT boots for static analysis, which never runs this package's
+        // AsyncColumnServiceProvider::hasViews() registration — so the
+        // 'async-column::' namespace can never resolve there even though every
+        // RendersPlaceholderTest proves it resolves at runtime.
+        // @phpstan-ignore argument.type (namespaced package view, false positive — see comment above)
         return view('async-column::placeholder', [
             'token' => $token->encode(),
             'loadingState' => $this->getLoadingState(),
@@ -230,7 +236,7 @@ class AsyncColumn extends TextColumn
         );
     }
 
-    public function sortable(bool | array | Closure $condition = true, ?Closure $query = null): static
+    public function sortable(bool|array|Closure $condition = true, ?Closure $query = null): static
     {
         if ($query === null && $condition !== false) {
             throw new LogicException(
@@ -242,7 +248,7 @@ class AsyncColumn extends TextColumn
         return parent::sortable($condition, $query);
     }
 
-    public function searchable(bool | array | string | Closure $condition = true, ?Closure $query = null, bool $isIndividual = false, bool $isGlobal = true): static
+    public function searchable(bool|array|string|Closure $condition = true, ?Closure $query = null, bool $isIndividual = false, bool $isGlobal = true): static
     {
         if ($query === null && $condition !== false) {
             throw new LogicException(
