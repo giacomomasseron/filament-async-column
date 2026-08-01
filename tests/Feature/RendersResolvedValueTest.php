@@ -180,3 +180,27 @@ it('badge() and color() now visibly apply to the resolved state', function (): v
         ->and($html)->toContain('fi-color-success')
         ->and($html)->toContain('shipped');
 });
+
+/**
+ * Regression for resolvedState() assigning a raw `null` to $this->getStateUsing.
+ *
+ * HasCellState::getState() branches on `$this->getStateUsing !== null` — a bare
+ * null there does not mean "the resolved value is null", it means "there is no
+ * state callback at all", so Filament falls through to getStateFromRecord() and
+ * renders the record's own DB attribute instead of the (null) resolved value.
+ *
+ * The column is deliberately named after a REAL Post attribute ('title'), not
+ * 'slow' like every other test in this file: 'slow' doesn't exist on Post, so
+ * data_get() returns null for the fallback path too and the bug is invisible.
+ * Naming the column 'title' makes the fallback produce a visibly different,
+ * wrong value ('One') so this test can actually catch the regression.
+ */
+it('does not fall back to the record attribute when a resolver returns null', function (): void {
+    $post = Post::create(['title' => 'One']);
+
+    $column = mountColumn(AsyncColumn::make('title')->resolveUsing(fn (): mixed => null));
+
+    $html = $column->renderResolvedHtml($post, null);
+
+    expect($html)->not->toContain('One');
+});

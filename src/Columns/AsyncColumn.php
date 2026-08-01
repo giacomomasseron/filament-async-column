@@ -157,10 +157,20 @@ class AsyncColumn extends TextColumn
      *
      * HasCellState::state() routes through getStateUsing(), which this class
      * overrides to throw — so assign the underlying property directly.
+     *
+     * The value is deliberately wrapped in a closure rather than assigned raw.
+     * HasCellState::getState() (filament/support) branches on
+     * `$this->getStateUsing !== null`: a bare `null` there doesn't mean "the
+     * resolved value is null", it means "there is no state callback at all", so
+     * Filament would fall through to getStateFromRecord() and silently render
+     * the record's own DB attribute (or lazy-load a relationship for a dotted
+     * column name) instead of the null the resolver actually returned. A
+     * closure is never itself null, so this path is always taken regardless of
+     * what $state holds.
      */
     public function resolvedState(mixed $state): static
     {
-        $this->getStateUsing = $state;
+        $this->getStateUsing = static fn (): mixed => $state;
         $this->clearCachedState();
 
         return $this;
