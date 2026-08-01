@@ -5,8 +5,23 @@ document.addEventListener('alpine:init', () => {
     const RESOLVE_METHOD = 'resolveAsyncColumns'
 
     window.Alpine.store('asyncColumn', {
+        // Map<componentId, Map<token, el[]>> — grouped by Livewire component (its
+        // wire:id) rather than one page-wide bag. BatchResolver::resolve() only ever
+        // resolves columns against the CALLED component's own table, so a page with
+        // several tables (e.g. a resource table plus a relation manager) must issue
+        // one request PER TABLE. Routing every pending cell into a single component's
+        // call — which a page-wide bag would do — silently strands every other
+        // component's cells on their skeleton forever.
         pending: new Map(),
+
+        // Map<componentId, Map<token, html>> — likewise keyed by component. A
+        // CellToken only encodes columnName + recordKey, so two different tables using
+        // the same column name against a record with the same id produce
+        // byte-identical tokens. An unscoped cache would let one table's resolved HTML
+        // get painted into another table's cell for a *different* underlying record —
+        // a data-correctness bug, not just a missed cache hit.
         cache: new Map(),
+
         scheduled: false,
         observer: null,
 
@@ -17,10 +32,12 @@ document.addEventListener('alpine:init', () => {
                 return
             }
 
+            const componentId = this.componentIdFor(el)
+
             // Repaint instantly from the client-side cache: after a sort or a
             // paginate, rows we already resolved should not hit the server again.
-            if (this.cache.has(token)) {
-                el.innerHTML = this.cache.get(token)
+            if (componentId && this.cache.get(componentId)?.has(token)) {
+                el.innerHTML = this.cache.get(componentId).get(token)
 
                 return
             }
@@ -53,18 +70,35 @@ document.addEventListener('alpine:init', () => {
 
         enqueue(el) {
             const token = el.dataset.asyncColumnToken
+            const componentId = this.componentIdFor(el)
 
-            if (! this.pending.has(token)) {
-                this.pending.set(token, [])
+            // No enclosing Livewire component root: there is nowhere to route this
+            // token, so it is dropped rather than being folded into some other
+            // component's batch.
+            if (! componentId) {
+                return
             }
 
-            this.pending.get(token).push(el)
-            this.schedule(el)
+            if (! this.pending.has(componentId)) {
+                this.pending.set(componentId, new Map())
+            }
+
+            const cells = this.pending.get(componentId)
+
+            if (! cells.has(token)) {
+                cells.set(token, [])
+            }
+
+            cells.get(token).push(el)
+            this.schedule()
         },
 
-        // One animation frame of debounce coalesces everything pending into a
-        // single request — including several rows scrolling into view together.
-        schedule(el) {
+        // One animation frame of debounce coalesces everything pending into as many
+        // requests as there are distinct Livewire components with pending cells —
+        // still exactly one request per component, no matter how many rows (including
+        // several rows across several tables scrolling into view together) triggered
+        // it within that frame.
+        schedule() {
             if (this.scheduled) {
                 return
             }
@@ -73,30 +107,50 @@ document.addEventListener('alpine:init', () => {
 
             requestAnimationFrame(() => {
                 this.scheduled = false
-                this.flush(el)
+                this.flush()
             })
         },
 
-        flush(el) {
+        flush() {
             if (this.pending.size === 0) {
                 return
             }
 
-            const batch = new Map(this.pending)
-            this.pending.clear()
+            const batches = this.pending
+            this.pending = new Map()
 
-            const component = this.componentFor(el)
+            batches.forEach((cells, componentId) => {
+                let component = null
 
-            if (! component) {
-                return
-            }
+                // The component may have been removed from the page (wire:navigate
+                // away, a relation manager's modal closing, ...) between enqueue and
+                // this flush, or window.Livewire.find() may throw on an id it no
+                // longer knows about. Either way this must not throw here, and it must
+                // not stop any OTHER component's batch in this same flush from being
+                // sent.
+                try {
+                    component = window.Livewire.find(componentId)
+                } catch (error) {
+                    component = null
+                }
 
-            component.call(RESOLVE_METHOD, Array.from(batch.keys()))
-                .then((result) => this.apply(batch, result))
-                .catch(() => this.markFailed(batch))
+                if (! component) {
+                    this.markFailed(cells)
+
+                    return
+                }
+
+                try {
+                    component.call(RESOLVE_METHOD, Array.from(cells.keys()))
+                        .then((result) => this.apply(componentId, cells, result))
+                        .catch(() => this.markFailed(cells))
+                } catch (error) {
+                    this.markFailed(cells)
+                }
+            })
         },
 
-        apply(batch, result) {
+        apply(componentId, batch, result) {
             const cells = (result && result.cells) || {}
 
             batch.forEach((elements, token) => {
@@ -107,7 +161,11 @@ document.addEventListener('alpine:init', () => {
                 }
 
                 if (! cell.error) {
-                    this.cache.set(token, cell.html)
+                    if (! this.cache.has(componentId)) {
+                        this.cache.set(componentId, new Map())
+                    }
+
+                    this.cache.get(componentId).set(token, cell.html)
                 }
 
                 elements.forEach((el) => {
@@ -127,14 +185,21 @@ document.addEventListener('alpine:init', () => {
 
         retry(el) {
             delete el.dataset.asyncColumnError
-            this.cache.delete(el.dataset.asyncColumnToken)
+
+            const token = el.dataset.asyncColumnToken
+            const componentId = this.componentIdFor(el)
+
+            if (componentId) {
+                this.cache.get(componentId)?.delete(token)
+            }
+
             this.enqueue(el)
         },
 
-        componentFor(el) {
+        componentIdFor(el) {
             const root = el.closest('[wire\\:id]')
 
-            return root ? window.Livewire.find(root.getAttribute('wire:id')) : null
+            return root ? root.getAttribute('wire:id') : null
         },
     })
 })
