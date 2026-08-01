@@ -64,6 +64,11 @@ class TestCase extends Orchestra
         // given". Re-binding it as a singleton — after Support's provider has already
         // registered, before providers boot — restores one shared instance per test
         // while keeping Filament's DataStoreOverride behaviour.
+        //
+        // Confirmed against filament/support 5.7.5 + livewire/livewire 4.3.4. Worth
+        // retrying without this line next time either package is bumped, in case
+        // it's been fixed upstream — it's harmless to leave in either way, since it
+        // degrades to a no-op re-declaration of an already-correct binding.
         $app->singleton(DataStore::class, DataStoreOverride::class);
     }
 
