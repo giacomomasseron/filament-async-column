@@ -36,9 +36,10 @@ use Throwable;
  *    dropped rather than turned into an error that could leak table structure.
  *  - A column that exists but is currently hidden ($column->isVisible() === false)
  *    or toggled off by the user ($column->isToggledHidden() === true) is rejected
- *    the same way. getColumn() returns every registered column regardless of
- *    visibility, so without this check a forged token could reveal a value the
- *    table itself never rendered a placeholder for.
+ *    the same way. Table::getColumn() would return every registered column
+ *    regardless of visibility, so this looks the token's column up through
+ *    Table::getVisibleColumns() instead — without that, a forged token could
+ *    reveal a value the table itself never rendered a placeholder for.
  *
  * The incoming token array is also capped at config('async-column.max_batch_size')
  * (truncated, never an error) so a single request cannot force arbitrarily many
@@ -49,6 +50,15 @@ use Throwable;
 class BatchResolver
 {
     /**
+     * Fallback used both when config('async-column.max_batch_size') is absent
+     * and when it resolves to something <= 0 (including a malformed env value:
+     * (int) casts a non-numeric ASYNC_COLUMN_MAX_BATCH_SIZE to 0). A cap of 0
+     * or less is nonsensical as "the maximum number of tokens to process" — it
+     * must never be read as "no cap".
+     */
+    protected const DEFAULT_MAX_BATCH_SIZE = 200;
+
+    /**
      * @param  array<int, mixed>  $tokens
      * @return array{cells: array<string, array{html: string, error: bool}>}
      */
@@ -56,11 +66,13 @@ class BatchResolver
     {
         $table = $component->getTable();
 
-        $maxBatchSize = (int) config('async-column.max_batch_size', 200);
+        $maxBatchSize = (int) config('async-column.max_batch_size', self::DEFAULT_MAX_BATCH_SIZE);
 
-        if ($maxBatchSize > 0) {
-            $tokens = array_slice($tokens, 0, $maxBatchSize);
+        if ($maxBatchSize <= 0) {
+            $maxBatchSize = self::DEFAULT_MAX_BATCH_SIZE;
         }
+
+        $tokens = array_slice($tokens, 0, $maxBatchSize);
 
         // Group valid tokens by column, keyed by the (still-untrusted) record key,
         // so each column's records can be loaded in a single query. The resolved
@@ -79,20 +91,21 @@ class BatchResolver
                 continue;
             }
 
-            $column = $table->getColumn($token->columnName);
+            // Table::getVisibleColumns() is array_filter(getColumns(), fn ($c) =>
+            // $c->isVisible() && ! $c->isToggledHidden()) (verified against
+            // filament/tables' Table\Concerns\HasColumns), memoised behind
+            // $cachedVisibleColumns and keyed by column name exactly like
+            // getColumns() — so this single lookup is both the "only columns
+            // genuinely defined on this table" check and the "currently visible,
+            // not toggled off" check getColumn() alone doesn't give us, without
+            // re-evaluating a policy-backed ->visible() a second time per token.
+            $column = $table->getVisibleColumns()[$token->columnName] ?? null;
 
-            // Only columns actually defined on this table are resolvable. A forged
+            // Only columns actually defined on this table — currently visible,
+            // not toggled off — are resolvable. A forged, hidden, or foreign
             // column name simply produces nothing — never an error, never a
             // callable built from client input.
             if (! $column instanceof AsyncColumn) {
-                continue;
-            }
-
-            // getColumn() returns every registered column regardless of whether
-            // it is currently visible or has been toggled off by the user. A
-            // hidden or toggled-off column never rendered a placeholder in the
-            // first place, so a forged token for it must produce nothing too.
-            if ((! $column->isVisible()) || $column->isToggledHidden()) {
                 continue;
             }
 
@@ -146,7 +159,7 @@ class BatchResolver
                     continue;
                 }
 
-                $cells[$rawToken] = $this->resolveCell($column, $record);
+                $cells[$rawToken] = $this->resolveCell($column, $record, $recordKey);
             }
         }
 
@@ -206,18 +219,28 @@ class BatchResolver
     /**
      * @return array{html: string, error: bool}
      */
-    protected function resolveCell(AsyncColumn $column, Model $record): array
+    protected function resolveCell(AsyncColumn $column, Model $record, string $recordKey): array
     {
         // A fresh column instance per cell: configuration (formatters, resolver,
         // view, ...) is shared, but record, state and cached state must not bleed
         // between rows sharing the same underlying column definition.
+        //
+        // $recordKey is $table->getRecordKey($record) — the caller's already-
+        // computed value, the SAME one the client minted its token from
+        // (Filament\Tables\Contracts\HasTable::getTableRecordKey(), overridable
+        // per component) — deliberately not (string) $record->getKey() here.
+        // A component overriding getTableRecordKey() would otherwise leave this
+        // cell's own recordKey() (visible to a developer's custom ->view() via
+        // $getRecordKey(), e.g. to build its own mountTableAction(...) call) and
+        // the cache key below out of sync with the identity the rest of the
+        // table — and the client — use for this exact row.
         $cell = clone $column;
         $cell->record($record);
-        $cell->recordKey((string) $record->getKey());
+        $cell->recordKey($recordKey);
         $cell->clearCachedState();
 
         try {
-            $state = $this->resolveState($cell, $record);
+            $state = $this->resolveState($cell, $record, $recordKey);
 
             return [
                 'html' => $cell->renderResolvedHtml($record, $state),
@@ -241,7 +264,24 @@ class BatchResolver
         // (errorStateUsing()) via getErrorState(). Never interpolate $exception
         // or its message directly here — resolvers hit APIs with credentials in
         // URLs and databases that echo SQL back in their error messages.
-        $errorState = $column->getErrorState($exception);
+        //
+        // getErrorState() itself can throw: it evaluate()s that developer
+        // closure, which may reference an unbound record (the hydration-failure
+        // call site passes a column with no ->record() ever set, so a
+        // Post-typed $record parameter gets a literal null and PHP throws a
+        // TypeError) or may simply fail on its own (e.g. it calls the same
+        // service the resolver just failed against). Both call sites are
+        // inside a catch block, so an uncaught throw here would propagate out
+        // of resolve() and take down the entire batch — exactly the
+        // "one failure never breaks the batch" guarantee this class exists to
+        // provide. Degrade to the default translated message instead.
+        try {
+            $errorState = $column->getErrorState($exception);
+        } catch (Throwable $errorStateException) {
+            report($errorStateException);
+
+            $errorState = __('async-column::async-column.error');
+        }
 
         return [
             'html' => $errorState instanceof Htmlable
@@ -251,7 +291,7 @@ class BatchResolver
         ];
     }
 
-    protected function resolveState(AsyncColumn $column, Model $record): mixed
+    protected function resolveState(AsyncColumn $column, Model $record, string $recordKey): mixed
     {
         $resolver = $column->getResolveUsing();
 
@@ -268,7 +308,7 @@ class BatchResolver
         }
 
         return $this->rememberAllowingNull(
-            $column->getCacheKey((string) $record->getKey()),
+            $column->getCacheKey($recordKey),
             $ttl,
             fn (): mixed => $column->evaluate($resolver, ['record' => $record]),
         );

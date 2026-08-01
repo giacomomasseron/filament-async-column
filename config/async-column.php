@@ -10,6 +10,8 @@ return [
     // Maximum number of cell tokens BatchResolver will process in a single
     // request. Extra tokens beyond this cap are silently truncated (never an
     // error), so a single request cannot force arbitrarily many resolver
-    // invocations.
+    // invocations. A value <= 0 — including a malformed env value, which
+    // (int) silently casts to 0 — is treated as invalid and falls back to
+    // the default of 200 rather than disabling the cap.
     'max_batch_size' => (int) env('ASYNC_COLUMN_MAX_BATCH_SIZE', 200),
 ];

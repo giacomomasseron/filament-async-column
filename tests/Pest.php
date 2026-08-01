@@ -8,5 +8,6 @@ uses(TestCase::class)
         PostsTable::$columns = [];
         PostsTable::$scope = null;
         PostsTable::$filters = [];
+        PostsTable::$recordKeyUsing = null;
     })
     ->in(__DIR__);
