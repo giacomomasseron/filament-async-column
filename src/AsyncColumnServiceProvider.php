@@ -12,6 +12,7 @@ class AsyncColumnServiceProvider extends PackageServiceProvider
         $package
             ->name('filament-async-column')
             ->hasConfigFile('async-column')
-            ->hasViews('async-column');
+            ->hasViews('async-column')
+            ->hasTranslations();
     }
 }
