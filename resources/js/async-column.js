@@ -22,6 +22,16 @@ document.addEventListener('alpine:init', () => {
         // a data-correctness bug, not just a missed cache hit.
         cache: new Map(),
 
+        // Elements currently enqueued or in-flight (added to `pending` but not yet
+        // applied or marked failed). Needed alongside the `asyncColumnSettled` dataset
+        // flag below: this covers the in-between window where a cell has been sent to
+        // the server but no response has come back yet, so there is no dataset flag
+        // yet to detect the duplicate against. Without this, the Livewire morph-hook
+        // safety net (see the bottom of this file) could enqueue — and request — the
+        // same cell twice if it fires while x-init's own registration is still
+        // in-flight.
+        tracked: new WeakSet(),
+
         scheduled: false,
         observer: null,
 
@@ -32,17 +42,37 @@ document.addEventListener('alpine:init', () => {
                 return
             }
 
+            // Already reached a terminal state (resolved or failed) and nothing about
+            // the DOM has changed since. Set by apply()/markFailed() below. Livewire's
+            // own morph strips this attribute back off whenever it re-sends the
+            // server's fresh (unresolved) placeholder markup for this cell — see the
+            // morph-hook comment at the bottom of this file — so this flag reads as
+            // "settled" only while that's still true, and clears itself exactly when
+            // a re-registration is actually warranted.
+            if (el.dataset.asyncColumnSettled === '1') {
+                return
+            }
+
             const componentId = this.componentIdFor(el)
 
             // Repaint instantly from the client-side cache: after a sort or a
             // paginate, rows we already resolved should not hit the server again.
             if (componentId && this.cache.get(componentId)?.has(token)) {
                 el.innerHTML = this.cache.get(componentId).get(token)
+                el.dataset.asyncColumnSettled = '1'
 
                 return
             }
 
+            // Already enqueued or observed by an earlier register() call on this
+            // exact element — must not enqueue (and therefore request) it a second
+            // time.
+            if (this.tracked.has(el)) {
+                return
+            }
+
             if (el.dataset.asyncColumnWhenVisible === '1') {
+                this.tracked.add(el)
                 this.observe(el)
 
                 return
@@ -78,6 +108,8 @@ document.addEventListener('alpine:init', () => {
             if (! componentId) {
                 return
             }
+
+            this.tracked.add(el)
 
             if (! this.pending.has(componentId)) {
                 this.pending.set(componentId, new Map())
@@ -153,10 +185,21 @@ document.addEventListener('alpine:init', () => {
         apply(componentId, batch, result) {
             const cells = (result && result.cells) || {}
 
+            // Any token the server declined to return — max_batch_size truncation, a
+            // record deleted between paint and resolve, a column toggled off
+            // mid-flight, an array/data-source table whose scopedQuery() is null, ...
+            // — must not be left showing its loading skeleton forever with no way to
+            // retry. Everything requested but absent from the response degrades to a
+            // failed (and, if retryable, clickable) cell exactly like a network error
+            // would.
+            const missing = new Map()
+
             batch.forEach((elements, token) => {
                 const cell = cells[token]
 
                 if (! cell) {
+                    missing.set(token, elements)
+
                     return
                 }
 
@@ -171,20 +214,58 @@ document.addEventListener('alpine:init', () => {
                 elements.forEach((el) => {
                     el.innerHTML = cell.html
                     el.dataset.asyncColumnError = cell.error ? '1' : '0'
+                    el.dataset.asyncColumnSettled = '1'
+                    this.tracked.delete(el)
                 })
             })
+
+            if (missing.size > 0) {
+                this.markFailed(missing)
+            }
         },
 
         markFailed(batch) {
             batch.forEach((elements) => {
-                elements.forEach((el) => {
-                    el.dataset.asyncColumnError = '1'
-                })
+                elements.forEach((el) => this.renderFailed(el))
             })
+        },
+
+        // Stops the loading skeleton and makes the failure visible, instead of
+        // leaving a cell shimmering forever with only the (invisible)
+        // data-async-column-error="1" attribute as evidence anything went wrong.
+        // Both labels are static, translated, developer-trusted strings rendered by
+        // placeholder.blade.php as data attributes (never the underlying exception —
+        // see BatchResolver::buildErrorCell()'s own comment on that), so they are
+        // written via textContent rather than innerHTML: correct either way here,
+        // but this way nothing downstream has to reason about escaping to stay safe.
+        renderFailed(el) {
+            el.dataset.asyncColumnError = '1'
+            el.dataset.asyncColumnSettled = '1'
+            this.tracked.delete(el)
+
+            el.innerHTML = ''
+
+            const errorLabel = el.dataset.asyncColumnErrorLabel
+
+            if (errorLabel) {
+                const message = document.createElement('span')
+                message.textContent = errorLabel
+                el.appendChild(message)
+            }
+
+            if (el.dataset.asyncColumnRetryable === '1') {
+                el.appendChild(document.createTextNode(' '))
+
+                const retry = document.createElement('span')
+                retry.className = 'fi-async-column-retry'
+                retry.textContent = el.dataset.asyncColumnRetryLabel || ''
+                el.appendChild(retry)
+            }
         },
 
         retry(el) {
             delete el.dataset.asyncColumnError
+            delete el.dataset.asyncColumnSettled
 
             const token = el.dataset.asyncColumnToken
             const componentId = this.componentIdFor(el)
@@ -202,4 +283,42 @@ document.addEventListener('alpine:init', () => {
             return root ? root.getAttribute('wire:id') : null
         },
     })
+
+    // Defensive safety net for Livewire's DOM morph (a drag-sort, a $refresh, any
+    // update that patches a keyed row in place rather than replacing it): Alpine's
+    // morph integration only re-runs x-init on nodes the morph ADDS, never on ones it
+    // merely UPDATES (verified against vendor/livewire/livewire's bundled
+    // @alpinejs/morph integration — Livewire.hook('morph.updated', ...) below is the
+    // exact, real hook name for livewire/livewire 4.3.4, confirmed against that
+    // vendor source, not guessed). A placeholder element that survives such a morph
+    // has its children patched back to the server's fresh (unresolved) skeleton
+    // markup without x-init ever re-running, so without this it would sit there
+    // forever — never consulting the client-side cache this file otherwise exists to
+    // use for exactly this situation ("after a sort or paginate, rows we already
+    // resolved should not hit the server again").
+    //
+    // register() call is deferred with queueMicrotask(): morph.updated fires for an
+    // element BEFORE morphdom patches that same element's *children*
+    // (patchAttributes -> updated() trigger -> patchChildren, in that order, per
+    // @alpinejs/morph's context.patch()), so calling register() synchronously here —
+    // and specifically a cache repaint via el.innerHTML — would be immediately
+    // clobbered by morphdom's own patchChildren call reverting it back to the
+    // server's skeleton right after. Deferring to a microtask runs this after the
+    // whole (synchronous) morph has finished.
+    //
+    // register() itself is idempotent (see the `tracked` WeakSet and the
+    // asyncColumnSettled dataset flag above), so this is safe to call even when
+    // x-init did already re-run for a given element: nothing here double-enqueues or
+    // fires a duplicate request.
+    if (typeof window.Livewire !== 'undefined') {
+        window.Livewire.hook('morph.updated', ({ el }) => {
+            if (! el?.dataset?.asyncColumnToken) {
+                return
+            }
+
+            queueMicrotask(() => {
+                window.Alpine.store('asyncColumn')?.register(el)
+            })
+        })
+    }
 })
