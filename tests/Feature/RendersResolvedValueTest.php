@@ -65,3 +65,53 @@ it('renders a view with state and record available', function (): void {
     expect($html)->toContain('shipped')
         ->and($html)->toContain('One');
 });
+
+/**
+ * CanFormatState::money() — like date(), dateTime(), since(), numeric(), time(), and
+ * their *Tooltip() siblings — registers its formatting closure with a hard-coded
+ * `TextColumn $column` parameter (see vendor/filament/tables/src/Columns/Concerns/
+ * CanFormatState.php). AsyncColumn is not a TextColumn, so Filament's own evaluator
+ * passes `$this` for that parameter and PHP's type check rejects it. This is a real,
+ * verified incompatibility in composing CanFormatState onto a non-TextColumn class —
+ * not a missing ext-intl/config issue — so it is pinned here rather than silently
+ * dropped. money()/date()/dateTime()/since()/numeric()/time()/isoDate()/isoDateTime()/
+ * isoTime() and the *Tooltip() variants are unsupported on AsyncColumn for this reason.
+ */
+it('documents that money() is unusable on AsyncColumn (TextColumn-typed closure parameter)', function (): void {
+    $post = Post::create(['title' => 'One']);
+
+    $column = mountColumn(AsyncColumn::make('slow')->money('USD'));
+
+    expect(fn () => $column->renderResolvedHtml($post, 1234.5))
+        ->toThrow(TypeError::class, 'must be of type Filament\Tables\Columns\TextColumn');
+});
+
+it('supports Filament markdown formatting on resolved state', function (): void {
+    $post = Post::create(['title' => 'One']);
+
+    $column = mountColumn(AsyncColumn::make('slow')->markdown());
+
+    $html = $column->renderResolvedHtml($post, '**bold**');
+
+    expect($html)->toContain('<strong>bold</strong>');
+});
+
+it('supports Filament character limiting on resolved state', function (): void {
+    $post = Post::create(['title' => 'One']);
+
+    $column = mountColumn(AsyncColumn::make('slow')->limit(5));
+
+    $html = $column->renderResolvedHtml($post, 'abcdefghij');
+
+    expect($html)->toBe('abcde...');
+});
+
+it('supports prefix and suffix on resolved state', function (): void {
+    $post = Post::create(['title' => 'One']);
+
+    $column = mountColumn(AsyncColumn::make('slow')->prefix('[')->suffix(']'));
+
+    $html = $column->renderResolvedHtml($post, 'x');
+
+    expect($html)->toContain('[x]');
+});
