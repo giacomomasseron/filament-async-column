@@ -218,6 +218,7 @@ class AsyncColumn extends TextColumn
             'token' => $token->encode(),
             'loadingState' => $this->getLoadingState(),
             'whenVisible' => $this->loadsWhenVisible(),
+            'retryable' => $this->isRetryable(),
         ])->render();
     }
 

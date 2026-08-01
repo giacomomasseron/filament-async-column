@@ -2,6 +2,9 @@
 
 namespace GiacomoMasseroni\AsyncColumn;
 
+use Filament\Support\Assets\Css;
+use Filament\Support\Assets\Js;
+use Filament\Support\Facades\FilamentAsset;
 use GiacomoMasseroni\AsyncColumn\Livewire\AsyncColumnHook;
 use Livewire\ComponentHookRegistry;
 use Spatie\LaravelPackageTools\Package;
@@ -61,5 +64,10 @@ class AsyncColumnServiceProvider extends PackageServiceProvider
         // and ->hasViews('async-column') already use. Registering explicitly here keeps
         // the translation namespace aligned with the view namespace.
         $this->loadTranslationsFrom(__DIR__.'/../resources/lang', 'async-column');
+
+        FilamentAsset::register([
+            Js::make('async-column', __DIR__.'/../resources/js/async-column.js'),
+            Css::make('async-column', __DIR__.'/../resources/css/async-column.css'),
+        ], package: 'giacomomasseron/filament-async-column');
     }
 }
