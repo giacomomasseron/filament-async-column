@@ -1,0 +1,13 @@
+# larastan/larastan and phpstan/phpstan-deprecation-rules are NOT included here:
+# phpstan/extension-installer (installed, allow-plugins'd in composer.json) auto-wires
+# every phpstan-extension-typed dependency's own extra.phpstan.includes, and both of
+# these declare themselves that way. Listing them again here made phpstan hard-fail
+# with "these files are included multiple times" instead of merely warning, so the
+# includes block from the task brief's snippet is intentionally omitted — verified
+# against this project's actual vendor/phpstan/extension-installer/src/GeneratedConfig.php.
+
+parameters:
+    level: 5
+    paths:
+        - src
+    tmpDir: build/phpstan
