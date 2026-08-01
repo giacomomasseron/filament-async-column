@@ -25,6 +25,24 @@ and are served automatically wherever `@filamentStyles` / `@filamentScripts` ren
 Filament panel already does. If you're using `filament/tables` on its own, outside a panel, make
 sure your layout includes those two directives.
 
+> [!IMPORTANT]
+> **Standalone `filament/tables` users must run `php artisan filament:assets` after installing.**
+> A registered asset still has to be *copied* into `public/` before `@filamentStyles` /
+> `@filamentScripts` can serve it. A Filament panel install (`filament:install --panels`) wires a
+> `post-autoload-dump` hook into your app's own `composer.json` that keeps this in sync
+> automatically on every `composer update` — but that hook is a side effect of the panel
+> installer, not something this package (or `filament/tables` alone) can register on its own.
+> Without it, the JS and CSS 404, Alpine throws a console error on every cell, and every column
+> is stuck on its skeleton permanently. The Alpine store lookup itself degrades gracefully in this
+> case (`$store.asyncColumn?.register($el)`), so a missing asset means a static skeleton rather
+> than a broken page — but running `php artisan filament:assets` (and re-running it after every
+> `composer update`, or adding the same hook Filament's own installer adds) is what actually fixes
+> it.
+
+```bash
+php artisan filament:assets
+```
+
 The package ships sensible defaults and works with zero configuration. To customize the cache
 store or the per-request batch cap, publish the config file:
 
@@ -198,7 +216,9 @@ return [
     'cache_prefix' => 'async-column',
 
     // Maximum number of cell tokens resolved in a single batch request. Extra
-    // tokens beyond this cap are silently truncated, never an error.
+    // tokens beyond this cap are silently truncated, never an error. A value
+    // <= 0 (including a malformed env value) falls back to the default of
+    // 200 rather than disabling the cap.
     'max_batch_size' => (int) env('ASYNC_COLUMN_MAX_BATCH_SIZE', 200),
 ];
 ```

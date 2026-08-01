@@ -18,9 +18,11 @@ use Livewire\ComponentHook;
  * This hook is instantiated for and asked about EVERY `call` on EVERY Livewire
  * component in the app (ComponentHookRegistry::proxyCallToHooks() loops every
  * registered hook for every component), so both guards below matter: the method
- * name check keeps a component's own methods from ever being shadowed, and the
- * HasTable check keeps a component with no Filament table from being touched at
- * all, even if it happened to define a same-named method.
+ * name check keeps every *other* method from being intercepted (a HasTable
+ * component defining its own resolveAsyncColumns() IS shadowed by this hook —
+ * that name is reserved), and the HasTable check keeps a component with no
+ * Filament table from being touched at all, even if it happened to define a
+ * same-named method.
  */
 class AsyncColumnHook extends ComponentHook
 {
