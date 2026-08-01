@@ -115,9 +115,11 @@ class AsyncColumn extends TextColumn
     /**
      * Render the value that came back from an async resolution.
      *
-     * Uses the developer's ->view() when one is set, otherwise formats the state
-     * through TextColumn's own formatState() (CanFormatState) and escapes it unless
-     * ->html() marks it as raw HTML.
+     * Uses the developer's ->view() when one is set, otherwise delegates to
+     * TextColumn's own toEmbeddedHtml() — the same renderer every other TextColumn
+     * cell uses — so formatting, escaping, arrays/lists, badges, colors, icons,
+     * weight, prefix/suffix etc. all behave exactly as they would on a normal
+     * TextColumn, instead of a hand-rolled subset of that behavior.
      */
     public function renderResolvedHtml(Model | array $record, mixed $state): string
     {
@@ -128,19 +130,7 @@ class AsyncColumn extends TextColumn
             return $this->render()->render();
         }
 
-        $formatted = $this->formatState($this->getState());
-
-        if ($formatted instanceof Htmlable) {
-            return $formatted->toHtml();
-        }
-
-        if ($formatted === null) {
-            return '';
-        }
-
-        $formatted = is_string($formatted) ? $formatted : (string) $formatted;
-
-        return $this->isHtml() ? $formatted : e($formatted);
+        return $this->toEmbeddedHtml();
     }
 
     public function getCellToken(): ?CellToken

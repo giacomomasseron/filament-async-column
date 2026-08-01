@@ -72,6 +72,12 @@ it('renders a view with state and record available', function (): void {
  * only composed the CanFormatState trait without being a TextColumn. Now that
  * AsyncColumn extends TextColumn directly, $this genuinely satisfies that type hint
  * and the real Number::currency() formatting runs.
+ *
+ * renderResolvedHtml() now delegates to TextColumn::toEmbeddedHtml() instead of
+ * hand-rolling formatting/escaping, so the output is wrapped in TextColumn's own
+ * `<div class="fi-ta-text fi-ta-text-item fi-size-sm">...</div>` — the exact wrapper
+ * every other TextColumn cell gets. These assertions use toContain() (not toBe())
+ * to check the formatted value survived, not the exact wrapper markup.
  */
 it('supports Filament money formatting on resolved state', function (): void {
     $post = Post::create(['title' => 'One']);
@@ -80,7 +86,7 @@ it('supports Filament money formatting on resolved state', function (): void {
 
     $html = $column->renderResolvedHtml($post, 1234.5);
 
-    expect($html)->toBe('$1,234.50');
+    expect($html)->toContain('$1,234.50');
 });
 
 it('supports Filament date formatting on resolved state', function (): void {
@@ -90,7 +96,7 @@ it('supports Filament date formatting on resolved state', function (): void {
 
     $html = $column->renderResolvedHtml($post, '2026-08-01 12:34:00');
 
-    expect($html)->toBe('2026-08-01');
+    expect($html)->toContain('2026-08-01');
 });
 
 it('supports Filament markdown formatting on resolved state', function (): void {
@@ -110,7 +116,7 @@ it('supports Filament character limiting on resolved state', function (): void {
 
     $html = $column->renderResolvedHtml($post, 'abcdefghij');
 
-    expect($html)->toBe('abcde...');
+    expect($html)->toContain('abcde...');
 });
 
 it('supports prefix and suffix on resolved state', function (): void {
@@ -121,4 +127,56 @@ it('supports prefix and suffix on resolved state', function (): void {
     $html = $column->renderResolvedHtml($post, 'x');
 
     expect($html)->toContain('[x]');
+});
+
+it('renders array state as a list, with no PHP warning', function (): void {
+    $post = Post::create(['title' => 'One']);
+
+    $column = mountColumn(AsyncColumn::make('slow'));
+
+    $warnings = [];
+    set_error_handler(function (int $errno, string $errstr) use (&$warnings): bool {
+        $warnings[] = $errstr;
+
+        return true;
+    });
+
+    $html = $column->renderResolvedHtml($post, ['a', 'b']);
+
+    restore_error_handler();
+
+    expect($warnings)->toBeEmpty()
+        ->and($html)->not->toContain('Array')
+        ->and($html)->toContain('a')
+        ->and($html)->toContain('b');
+});
+
+/**
+ * The old hand-rolled formatter returned '' for a null state. Delegating to
+ * toEmbeddedHtml() changes this: TextColumn's blank-state branch now renders an
+ * (empty) `<div class="fi-ta-text">...</div>` placeholder wrapper instead. Both are
+ * "no error, no visible text" — this test documents the new shape rather than
+ * asserting the old empty-string behavior.
+ */
+it('handles a null resolved state without error', function (): void {
+    $post = Post::create(['title' => 'One']);
+
+    $column = mountColumn(AsyncColumn::make('slow'));
+
+    $html = $column->renderResolvedHtml($post, null);
+
+    expect($html)->toContain('fi-ta-text')
+        ->and($html)->not->toContain('Array');
+});
+
+it('badge() and color() now visibly apply to the resolved state', function (): void {
+    $post = Post::create(['title' => 'One']);
+
+    $column = mountColumn(AsyncColumn::make('slow')->badge()->color('success'));
+
+    $html = $column->renderResolvedHtml($post, 'shipped');
+
+    expect($html)->toContain('fi-badge')
+        ->and($html)->toContain('fi-color-success')
+        ->and($html)->toContain('shipped');
 });
