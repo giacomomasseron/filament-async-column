@@ -2,6 +2,8 @@
 
 namespace GiacomoMasseroni\AsyncColumn\Resolution;
 
+use Carbon\CarbonInterface;
+use Closure;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 use GiacomoMasseroni\AsyncColumn\Columns\AsyncColumn;
@@ -265,12 +267,51 @@ class BatchResolver
             return $column->evaluate($resolver, ['record' => $record]);
         }
 
-        // An exception propagates out of the callback, so failures are never cached.
-        return $this->cache()->remember(
+        return $this->rememberAllowingNull(
             $column->getCacheKey((string) $record->getKey()),
             $ttl,
             fn (): mixed => $column->evaluate($resolver, ['record' => $record]),
         );
+    }
+
+    /**
+     * A cache-aware stand-in for Repository::remember() that correctly round-trips
+     * a legitimately null resolved value.
+     *
+     * Illuminate\Cache\Repository::get() collapses "nothing is cached under this
+     * key" and "the cached value genuinely IS null" into the same bare PHP `null`
+     * (its `is_null($value)` check can't tell a Store miss from a stored null —
+     * every built-in Store's get() returns plain `null` for both). Repository::
+     * remember() is built directly on that check, so it would treat every
+     * previously-null resolution as a permanent miss and silently re-run the
+     * resolver on every single batch despite cacheFor() — defeating caching for
+     * exactly the resolvers most likely to legitimately return null (a nullable
+     * API field, "no data available"). Verified directly against this project's
+     * vendor/laravel/framework Repository + ArrayStore, not assumed from the
+     * docblock.
+     *
+     * Wrapping the resolved value in a single-key array before writing sidesteps
+     * this: the thing actually persisted is never itself null (even when the
+     * resolver's result is), so a genuine hit is always a non-null array and a
+     * true cache miss is the only thing left that reads back as bare null.
+     */
+    protected function rememberAllowingNull(string $key, int|CarbonInterface $ttl, Closure $callback): mixed
+    {
+        $store = $this->cache();
+
+        $cached = $store->get($key);
+
+        if ($cached !== null) {
+            return $cached['value'];
+        }
+
+        // The exception propagates out of $callback() before put() runs, so a
+        // failed resolution is never cached.
+        $value = $callback();
+
+        $store->put($key, ['value' => $value], $ttl);
+
+        return $value;
     }
 
     protected function cache(): Repository

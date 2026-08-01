@@ -106,3 +106,63 @@ it('does not cache a failed resolution', function (): void {
 
     expect($calls)->toBe(2);
 });
+
+it('caches a legitimately null resolved value instead of re-running the resolver', function (): void {
+    // Illuminate\Cache\Repository::get()'s is_null() check cannot distinguish
+    // "nothing cached under this key" from "the cached value genuinely IS
+    // null" -- both collapse to bare PHP null at the Store layer. A resolver
+    // whose correct result is null (a nullable API field, "no data available")
+    // must still only run once per TTL window, not on every single batch.
+    $post = Post::create(['title' => 'One']);
+    $calls = 0;
+
+    PostsTable::$columns = [
+        AsyncColumn::make('slow')
+            ->cacheFor(300)
+            ->resolveUsing(function () use (&$calls) {
+                $calls++;
+
+                return null;
+            }),
+    ];
+
+    $component = Livewire::test(PostsTable::class)->instance();
+    $tokens = [(new CellToken('slow', (string) $post->getKey()))->encode()];
+
+    $first = app(BatchResolver::class)->resolve($component, $tokens);
+    $second = app(BatchResolver::class)->resolve($component, $tokens);
+
+    expect($calls)->toBe(1)
+        ->and($first['cells'])->toHaveKey($tokens[0])
+        ->and($second['cells'])->toHaveKey($tokens[0])
+        ->and($second['cells'][$tokens[0]]['error'])->toBeFalse();
+});
+
+it('never actually persists a value when cacheFor(0) is used, so the resolver runs on every batch', function (): void {
+    // Documents cacheFor(0)'s real behavior rather than leaving it implicit:
+    // Illuminate\Cache\Repository::put() treats a computed TTL of <= 0 seconds
+    // as a forget() instead of a write (see Repository::put()), so a TTL of 0
+    // takes the caching code path on every call but never actually leaves
+    // anything behind -- functionally identical to caching being off, just
+    // with the extra get()/forget() round-trip on every resolution.
+    $post = Post::create(['title' => 'One']);
+    $calls = 0;
+
+    PostsTable::$columns = [
+        AsyncColumn::make('slow')
+            ->cacheFor(0)
+            ->resolveUsing(function () use (&$calls): string {
+                $calls++;
+
+                return 'v';
+            }),
+    ];
+
+    $component = Livewire::test(PostsTable::class)->instance();
+    $tokens = [(new CellToken('slow', (string) $post->getKey()))->encode()];
+
+    app(BatchResolver::class)->resolve($component, $tokens);
+    app(BatchResolver::class)->resolve($component, $tokens);
+
+    expect($calls)->toBe(2);
+});
