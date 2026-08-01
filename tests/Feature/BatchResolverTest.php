@@ -1,11 +1,13 @@
 <?php
 
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
 use GiacomoMasseroni\AsyncColumn\Columns\AsyncColumn;
 use GiacomoMasseroni\AsyncColumn\Resolution\BatchResolver;
 use GiacomoMasseroni\AsyncColumn\Resolution\CellToken;
 use GiacomoMasseroni\AsyncColumn\Tests\Fixtures\Post;
 use GiacomoMasseroni\AsyncColumn\Tests\Fixtures\PostsTable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Livewire\Livewire;
@@ -234,4 +236,92 @@ it('degrades a column to error cells when hydration itself fails, instead of thr
 
     expect($result['cells'][$token]['error'])->toBeTrue()
         ->and(json_encode($result))->not->toContain('no such table');
+});
+
+/**
+ * Canary: BatchResolver::scopedQuery() reaches Filament\Tables\Concerns\HasFilters
+ * ::applyFiltersToTableQuery() via spatie/invade because it is `protected` and not
+ * part of the public HasTable contract. If a Filament upgrade renames or removes
+ * it, BatchResolver falls back to the public filterTableQuery() and then to an
+ * unfiltered query (see scopedQuery()'s docblock) rather than throwing — which
+ * means the "table filters are bypassed by a forged token" gap could silently
+ * reopen without a single test failing. This test exists purely to make that
+ * upgrade loud: if it fails, go update BatchResolver::scopedQuery() to match
+ * whatever Filament renamed the method to, don't just delete this test.
+ */
+it('still finds the protected Filament method BatchResolver reaches via invade()', function (): void {
+    expect(method_exists(PostsTable::class, 'applyFiltersToTableQuery'))->toBeTrue();
+});
+
+it('excludes a record hidden by an active table filter, without invoking its resolver', function (): void {
+    $visible = Post::create(['title' => 'Visible', 'author_id' => 1]);
+    $hidden = Post::create(['title' => 'Hidden', 'author_id' => 999]);
+
+    $calls = 0;
+
+    PostsTable::$columns = [
+        AsyncColumn::make('slow')->resolveUsing(function (Post $record) use (&$calls): string {
+            $calls++;
+
+            return 'v-'.$record->getKey();
+        }),
+    ];
+
+    // A real Filament filter, active by default (no user interaction needed),
+    // built through the actual filter API — not a stand-in that modifies the
+    // base query directly, which would prove nothing about filter handling.
+    PostsTable::$filters = [
+        Filter::make('onlyAuthorOne')
+            ->query(fn (Builder $query): Builder => $query->where('author_id', 1))
+            ->default(),
+    ];
+
+    $component = Livewire::test(PostsTable::class)->instance();
+
+    // Sanity: the filter genuinely excludes $hidden from the table's own listing
+    // query, or this test would prove nothing about filter enforcement.
+    expect($component->getTableRecords()->pluck('id'))->not->toContain($hidden->getKey());
+
+    $visibleToken = (new CellToken('slow', (string) $visible->getKey()))->encode();
+    $hiddenToken = (new CellToken('slow', (string) $hidden->getKey()))->encode();
+
+    $result = app(BatchResolver::class)->resolve($component, [$visibleToken, $hiddenToken]);
+
+    expect($result['cells'])->toHaveKey($visibleToken)
+        ->and($result['cells'])->not->toHaveKey($hiddenToken)
+        ->and($calls)->toBe(1);
+});
+
+it('does NOT apply the active search term when resolving cells, unlike filterTableQuery', function (): void {
+    $searchedFor = Post::create(['title' => 'Alpha']);
+    $excludedBySearch = Post::create(['title' => 'Zulu']);
+
+    $calls = 0;
+
+    PostsTable::$columns = [
+        TextColumn::make('title')->searchable(),
+        AsyncColumn::make('slow')->resolveUsing(function (Post $record) use (&$calls): string {
+            $calls++;
+
+            return 'v-'.$record->getKey();
+        }),
+    ];
+
+    $component = Livewire::test(PostsTable::class)
+        ->set('tableSearch', 'Alpha')
+        ->instance();
+
+    // Sanity: the active search genuinely excludes $excludedBySearch from the
+    // table's own listing query, or this test would prove nothing.
+    expect($component->getTableRecords()->pluck('id'))->not->toContain($excludedBySearch->getKey());
+
+    // A cell for the search-excluded record must still resolve: an in-flight
+    // batch request must not have cells vanish out from under it just because
+    // the user typed into the search box in the meantime.
+    $token = (new CellToken('slow', (string) $excludedBySearch->getKey()))->encode();
+
+    $result = app(BatchResolver::class)->resolve($component, [$token]);
+
+    expect($result['cells'])->toHaveKey($token)
+        ->and($calls)->toBe(1);
 });

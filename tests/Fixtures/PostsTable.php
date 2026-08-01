@@ -9,6 +9,7 @@ use Filament\Schemas\Contracts\HasSchemas;
 use Filament\Tables\Columns\Column;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
+use Filament\Tables\Filters\BaseFilter;
 use Filament\Tables\Table;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
@@ -26,6 +27,9 @@ class PostsTable extends Component implements HasActions, HasSchemas, HasTable
     /** @var (\Closure(Builder): Builder)|null */
     public static $scope = null;
 
+    /** @var array<int, BaseFilter> */
+    public static array $filters = [];
+
     public function table(Table $table): Table
     {
         $query = Post::query();
@@ -36,7 +40,8 @@ class PostsTable extends Component implements HasActions, HasSchemas, HasTable
 
         return $table
             ->query($query)
-            ->columns(static::$columns);
+            ->columns(static::$columns)
+            ->filters(static::$filters);
     }
 
     public function render(): View

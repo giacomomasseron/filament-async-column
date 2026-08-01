@@ -7,5 +7,6 @@ uses(TestCase::class)
     ->beforeEach(function (): void {
         PostsTable::$columns = [];
         PostsTable::$scope = null;
+        PostsTable::$filters = [];
     })
     ->in(__DIR__);

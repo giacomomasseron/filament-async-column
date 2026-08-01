@@ -3,10 +3,14 @@
 namespace GiacomoMasseroni\AsyncColumn\Resolution;
 
 use Filament\Tables\Contracts\HasTable;
+use Filament\Tables\Table;
 use GiacomoMasseroni\AsyncColumn\Columns\AsyncColumn;
 use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use LogicException;
+use RuntimeException;
 use Throwable;
 
 /**
@@ -17,11 +21,12 @@ use Throwable;
  * reaching data, or even the existence of a column, the requesting user could not
  * already see:
  *
- *  - Records are hydrated exclusively through the table's OWN query
- *    ($table->getQuery()->whereKey(...)), never Model::find(). Tenancy, global
- *    scopes and any ->modifyQueryUsing() constraints therefore apply exactly as
- *    they would to the table's own listing request. A key for a row outside that
- *    query simply never comes back from ->get(), so no cell is produced for it.
+ *  - Records are hydrated exclusively through the table's OWN query, scoped
+ *    exactly the way Filament itself scopes a single-record lookup (see
+ *    scopedQuery() below) — never Model::find(). Tenancy, global scopes, table
+ *    filters and any ->modifyQueryUsing() constraints therefore apply. A key for
+ *    a row outside that query simply never comes back from ->get(), so no cell
+ *    is produced for it.
  *  - Only columns that are actually defined on the table (and are AsyncColumn
  *    instances) are resolved. An unknown or mistyped column name is silently
  *    dropped rather than turned into an error that could leak table structure.
@@ -94,23 +99,32 @@ class BatchResolver
         $cells = [];
 
         foreach ($groups as ['column' => $column, 'tokens' => $tokensByRecordKey]) {
-            $query = $table->getQuery();
-
-            if ($query === null) {
-                continue;
-            }
-
             try {
-                // Hydrate through the table's OWN query, so tenancy, global scopes
-                // and every table constraint apply. A forged record key cannot
-                // reach a row the user could not already see — it simply never
-                // comes back here.
+                $query = $this->scopedQuery($component, $table);
+
+                if ($query === null) {
+                    continue;
+                }
+
+                // Match what Filament's own single-record resolution
+                // (HasRecords::resolveTableRecord()) does after scoping the query:
+                // every visible column's aggregate (counts/avg/sum/...) selects must
+                // be present too, or a resolver reading e.g. $record->comments_count
+                // would silently see null instead of the value it would have seen in
+                // the table's own listing query.
+                foreach ($table->getVisibleColumns() as $visibleColumn) {
+                    $visibleColumn->applyRelationshipAggregates($query);
+                }
+
+                // Hydrate through the table's OWN (now filter-scoped) query. A forged
+                // record key cannot reach a row the user could not already see — it
+                // simply never comes back here.
                 $records = $query->whereKey(array_keys($tokensByRecordKey))->get();
             } catch (Throwable $exception) {
-                // A query-level failure (bad connection, broken constraint, ...)
-                // must not abort the whole batch any more than a single failing
-                // resolver does — every cell in this column degrades to an error
-                // cell instead.
+                // A query-level failure (bad connection, broken filter, broken
+                // constraint, ...) must not abort the whole batch any more than a
+                // single failing resolver does — every cell in this column degrades
+                // to an error cell instead.
                 report($exception);
 
                 foreach ($tokensByRecordKey as $rawToken) {
@@ -133,6 +147,56 @@ class BatchResolver
         }
 
         return ['cells' => $cells];
+    }
+
+    /**
+     * Builds the query cell hydration reads from, scoped exactly the way Filament
+     * scopes a single-record lookup — filters applied, search deliberately NOT
+     * applied (a search term in flight must not make an in-flight cell disappear).
+     *
+     * Filament\Tables\Concerns\HasFilters::applyFiltersToTableQuery() (verified
+     * against filament/tables 5.7.5) is the exact method Filament's own canonical
+     * per-record resolution, HasRecords::resolveTableRecord(), uses for this. It is
+     * `protected` on the Livewire table component and not part of the public
+     * HasTable contract this class is handed, so it is reached via spatie/invade —
+     * a direct dependency of this package (see composer.json) rather than the
+     * transitive copy filament/support happens to pull in — instead of
+     * reimplementing filter application ourselves and risking silent drift from
+     * Filament's own behaviour.
+     *
+     * Because that call reaches a protected internal Filament may rename or
+     * re-signature in any release, this is guarded: if the internal is gone, fall
+     * back to the public filterTableQuery() (stricter — it also applies search,
+     * which is safe here even though it isn't what we want); if that is gone too,
+     * fall back to the unscoped query and report() a RuntimeException so the gap
+     * surfaces in error tracking instead of silently reintroducing "a forged token
+     * bypasses table filters". Never throw: one Filament upgrade should not take
+     * down every table using this column.
+     */
+    protected function scopedQuery(HasTable $component, Table $table): Builder|Relation|null
+    {
+        $query = $table->getQuery(isResolvingRecord: true);
+
+        if ($query === null) {
+            return null;
+        }
+
+        if (method_exists($component, 'applyFiltersToTableQuery')) {
+            return invade($component)->applyFiltersToTableQuery($query, isResolvingRecord: true);
+        }
+
+        if (method_exists($component, 'filterTableQuery')) {
+            return $component->filterTableQuery($query);
+        }
+
+        report(new RuntimeException(
+            'AsyncColumn\'s BatchResolver could not find Filament\'s applyFiltersToTableQuery() '
+            .'or filterTableQuery() method on ['.$component::class.']. Table filters will NOT be '
+            .'applied when resolving async cells until this is fixed — Filament appears to have '
+            .'changed an internal API this package depends on.'
+        ));
+
+        return $query;
     }
 
     /**
