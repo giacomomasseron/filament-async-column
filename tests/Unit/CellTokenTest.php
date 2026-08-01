@@ -27,4 +27,6 @@ it('rejects malformed tokens', function (string $malformed): void {
     'too many segments' => 'YQ:Yg:Yw',
     'illegal characters' => 'not valid!:Yg',
     'empty column' => ':NDI',
+    'undecodable length' => 'Y:Yg',
+    'empty record key' => 'Yg:',
 ]);
