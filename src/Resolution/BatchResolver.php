@@ -5,10 +5,12 @@ namespace GiacomoMasseroni\AsyncColumn\Resolution;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 use GiacomoMasseroni\AsyncColumn\Columns\AsyncColumn;
+use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Support\Facades\Cache;
 use LogicException;
 use RuntimeException;
 use Throwable;
@@ -257,6 +259,22 @@ class BatchResolver
             );
         }
 
-        return $column->evaluate($resolver, ['record' => $record]);
+        $ttl = $column->getCacheTtl();
+
+        if ($ttl === null) {
+            return $column->evaluate($resolver, ['record' => $record]);
+        }
+
+        // An exception propagates out of the callback, so failures are never cached.
+        return $this->cache()->remember(
+            $column->getCacheKey((string) $record->getKey()),
+            $ttl,
+            fn (): mixed => $column->evaluate($resolver, ['record' => $record]),
+        );
+    }
+
+    protected function cache(): Repository
+    {
+        return Cache::store(config('async-column.cache_store'));
     }
 }

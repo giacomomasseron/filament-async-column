@@ -2,7 +2,9 @@
 
 namespace GiacomoMasseroni\AsyncColumn\Columns;
 
+use Carbon\CarbonInterface;
 use Closure;
+use DateTimeInterface;
 use Filament\Tables\Columns\TextColumn;
 use GiacomoMasseroni\AsyncColumn\Resolution\CellToken;
 use Illuminate\Contracts\Support\Htmlable;
@@ -22,6 +24,10 @@ class AsyncColumn extends TextColumn
     protected bool | Closure $loadsWhenVisible = false;
 
     protected bool | Closure $isRetryable = true;
+
+    protected int | CarbonInterface | Closure | null $cacheTtl = null;
+
+    protected mixed $cacheVersion = null;
 
     public function resolveUsing(?Closure $callback): static
     {
@@ -96,6 +102,54 @@ class AsyncColumn extends TextColumn
     public function isRetryable(): bool
     {
         return (bool) $this->evaluate($this->isRetryable);
+    }
+
+    public function cacheFor(int | CarbonInterface | Closure | null $ttl): static
+    {
+        $this->cacheTtl = $ttl;
+
+        return $this;
+    }
+
+    public function getCacheTtl(): int | CarbonInterface | null
+    {
+        return $this->evaluate($this->cacheTtl);
+    }
+
+    public function cacheVersion(mixed $version): static
+    {
+        $this->cacheVersion = $version;
+
+        return $this;
+    }
+
+    public function getCacheVersion(): string
+    {
+        $version = $this->evaluate($this->cacheVersion);
+
+        if ($version === null) {
+            return '';
+        }
+
+        return $version instanceof DateTimeInterface
+            ? $version->format('U')
+            : (string) $version;
+    }
+
+    /**
+     * NOTE: this key is deliberately NOT scoped to the authenticated user, so a
+     * warm cache benefits everyone. Resolvers returning viewer-specific data must
+     * scope it themselves via ->cacheVersion(fn () => auth()->id()).
+     */
+    public function getCacheKey(string $recordKey): string
+    {
+        return implode(':', [
+            config('async-column.cache_prefix', 'async-column'),
+            $this->getLivewire()::class,
+            $this->getName(),
+            $recordKey,
+            $this->getCacheVersion(),
+        ]);
     }
 
     /**
