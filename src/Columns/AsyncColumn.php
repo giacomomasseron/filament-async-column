@@ -6,6 +6,7 @@ use Closure;
 use Filament\Tables\Columns\Column;
 use GiacomoMasseroni\AsyncColumn\Resolution\CellToken;
 use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\HtmlString;
 use LogicException;
 use Throwable;
@@ -21,6 +22,10 @@ class AsyncColumn extends Column
     protected bool | Closure $loadsWhenVisible = false;
 
     protected bool | Closure $isRetryable = true;
+
+    protected bool | Closure $isHtml = false;
+
+    protected ?Closure $formatStateUsing = null;
 
     public function resolveUsing(?Closure $callback): static
     {
@@ -109,6 +114,76 @@ class AsyncColumn extends Column
         $this->clearCachedState();
 
         return $this;
+    }
+
+    /**
+     * Mark the resolved state as raw HTML instead of plain text.
+     *
+     * Filament's TextColumn gets this from Concerns\CanFormatState, but that trait
+     * also pulls in ~25 TextColumn-only helpers (date(), money(), markdown(), ...)
+     * that type-hint TextColumn in their closures and would break if ever invoked
+     * on this class. AsyncColumn implements only the "view, string or HTML" surface
+     * PROD.md actually asks for.
+     */
+    public function html(bool | Closure $condition = true): static
+    {
+        $this->isHtml = $condition;
+
+        return $this;
+    }
+
+    public function isHtml(): bool
+    {
+        return (bool) $this->evaluate($this->isHtml);
+    }
+
+    /**
+     * Transform the resolved state before it is escaped/rendered.
+     */
+    public function formatStateUsing(?Closure $callback): static
+    {
+        $this->formatStateUsing = $callback;
+
+        return $this;
+    }
+
+    public function formatState(mixed $state): mixed
+    {
+        if ($this->formatStateUsing === null) {
+            return $state;
+        }
+
+        return $this->evaluate($this->formatStateUsing, ['state' => $state]);
+    }
+
+    /**
+     * Render the value that came back from an async resolution.
+     *
+     * Uses the developer's ->view() when one is set, otherwise formats the state
+     * through formatState() and escapes it unless ->html() marks it as raw HTML.
+     */
+    public function renderResolvedHtml(Model | array $record, mixed $state): string
+    {
+        $this->record($record);
+        $this->resolvedState($state);
+
+        if ($this->hasView()) {
+            return $this->render()->render();
+        }
+
+        $formatted = $this->formatState($this->getState());
+
+        if ($formatted instanceof Htmlable) {
+            return $formatted->toHtml();
+        }
+
+        if ($formatted === null) {
+            return '';
+        }
+
+        $formatted = is_string($formatted) ? $formatted : (string) $formatted;
+
+        return $this->isHtml() ? $formatted : e($formatted);
     }
 
     public function getCellToken(): ?CellToken
