@@ -5,3 +5,4 @@ composer.lock
 build/
 .idea/
 .DS_Store
+.superpowers/
