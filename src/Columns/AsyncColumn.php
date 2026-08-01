@@ -3,9 +3,7 @@
 namespace GiacomoMasseroni\AsyncColumn\Columns;
 
 use Closure;
-use Filament\Support\Concerns\CanConfigureCommonMark;
-use Filament\Tables\Columns\Column;
-use Filament\Tables\Columns\Concerns\CanFormatState;
+use Filament\Tables\Columns\TextColumn;
 use GiacomoMasseroni\AsyncColumn\Resolution\CellToken;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Model;
@@ -13,11 +11,8 @@ use Illuminate\Support\HtmlString;
 use LogicException;
 use Throwable;
 
-class AsyncColumn extends Column
+class AsyncColumn extends TextColumn
 {
-    use CanFormatState;
-    use CanConfigureCommonMark;
-
     protected ?Closure $resolveUsing = null;
 
     protected string | Htmlable | Closure | null $loadingState = null;
@@ -121,8 +116,8 @@ class AsyncColumn extends Column
      * Render the value that came back from an async resolution.
      *
      * Uses the developer's ->view() when one is set, otherwise formats the state
-     * through Filament's own CanFormatState concern (formatState()) and escapes it
-     * unless ->html() marks it as raw HTML.
+     * through TextColumn's own formatState() (CanFormatState) and escapes it unless
+     * ->html() marks it as raw HTML.
      */
     public function renderResolvedHtml(Model | array $record, mixed $state): string
     {
@@ -163,7 +158,9 @@ class AsyncColumn extends Column
      * Always render the placeholder — never the value.
      *
      * ViewComponent::toHtml() would render the developer's ->view() synchronously
-     * whenever hasView() is true, which would defeat the entire package.
+     * whenever hasView() is true, and TextColumn (via HasEmbeddedView) would otherwise
+     * fall through to toEmbeddedHtml(), which calls getState(). This total override
+     * replaces both paths and must never call parent::toHtml() or toEmbeddedHtml().
      */
     public function toHtml(): string
     {

@@ -67,23 +67,30 @@ it('renders a view with state and record available', function (): void {
 });
 
 /**
- * CanFormatState::money() — like date(), dateTime(), since(), numeric(), time(), and
- * their *Tooltip() siblings — registers its formatting closure with a hard-coded
- * `TextColumn $column` parameter (see vendor/filament/tables/src/Columns/Concerns/
- * CanFormatState.php). AsyncColumn is not a TextColumn, so Filament's own evaluator
- * passes `$this` for that parameter and PHP's type check rejects it. This is a real,
- * verified incompatibility in composing CanFormatState onto a non-TextColumn class —
- * not a missing ext-intl/config issue — so it is pinned here rather than silently
- * dropped. money()/date()/dateTime()/since()/numeric()/time()/isoDate()/isoDateTime()/
- * isoTime() and the *Tooltip() variants are unsupported on AsyncColumn for this reason.
+ * Confirms the earlier hand-rolled-vs-composed-trait finding: money()'s internal
+ * closure type-hints `TextColumn $column`, which threw a TypeError when AsyncColumn
+ * only composed the CanFormatState trait without being a TextColumn. Now that
+ * AsyncColumn extends TextColumn directly, $this genuinely satisfies that type hint
+ * and the real Number::currency() formatting runs.
  */
-it('documents that money() is unusable on AsyncColumn (TextColumn-typed closure parameter)', function (): void {
+it('supports Filament money formatting on resolved state', function (): void {
     $post = Post::create(['title' => 'One']);
 
     $column = mountColumn(AsyncColumn::make('slow')->money('USD'));
 
-    expect(fn () => $column->renderResolvedHtml($post, 1234.5))
-        ->toThrow(TypeError::class, 'must be of type Filament\Tables\Columns\TextColumn');
+    $html = $column->renderResolvedHtml($post, 1234.5);
+
+    expect($html)->toBe('$1,234.50');
+});
+
+it('supports Filament date formatting on resolved state', function (): void {
+    $post = Post::create(['title' => 'One']);
+
+    $column = mountColumn(AsyncColumn::make('slow')->date('Y-m-d'));
+
+    $html = $column->renderResolvedHtml($post, '2026-08-01 12:34:00');
+
+    expect($html)->toBe('2026-08-01');
 });
 
 it('supports Filament markdown formatting on resolved state', function (): void {
