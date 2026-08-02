@@ -28,7 +28,17 @@ class AsyncColumnHook extends ComponentHook
 {
     public const METHOD = 'resolveAsyncColumns';
 
-    public function call($method, $params, $returnEarly, $metadata, $componentContext)
+    /**
+     * Livewire discovers this by name (method_exists) rather than through an
+     * interface, so the parameters stay untyped at runtime and are described here
+     * instead. Adding native types would turn any future signature change on
+     * Livewire's side into a fatal TypeError rather than a hook that simply stops
+     * matching.
+     *
+     * @param  array<int, mixed>  $params
+     * @param  array<string, mixed>  $metadata
+     */
+    public function call(string $method, $params, \Closure $returnEarly, $metadata, mixed $componentContext): void
     {
         if ($method !== self::METHOD) {
             return;

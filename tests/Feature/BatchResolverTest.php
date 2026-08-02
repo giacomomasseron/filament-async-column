@@ -8,11 +8,15 @@ use GiacomoMasseroni\AsyncColumn\Resolution\CellToken;
 use GiacomoMasseroni\AsyncColumn\Tests\Fixtures\Post;
 use GiacomoMasseroni\AsyncColumn\Tests\Fixtures\PostsTable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use Livewire\Livewire;
 
+/**
+ * @param  iterable<int, Post>  $posts
+ * @return array<int, string>
+ */
 function tokensFor(string $column, iterable $posts): array
 {
     $tokens = [];
@@ -31,7 +35,7 @@ it('resolves every token in a single record query', function (): void {
         AsyncColumn::make('slow')->resolveUsing(fn (Post $record): string => 'v-'.$record->getKey()),
     ];
 
-    $component = Livewire::test(PostsTable::class)->instance();
+    $component = mountPostsTable();
 
     $queries = 0;
     DB::listen(function () use (&$queries): void {
@@ -58,7 +62,7 @@ it('isolates a failing cell without affecting its siblings', function (): void {
         }),
     ];
 
-    $component = Livewire::test(PostsTable::class)->instance();
+    $component = mountPostsTable();
 
     $result = app(BatchResolver::class)->resolve($component, tokensFor('slow', [$ok, $bad]));
 
@@ -79,7 +83,7 @@ it('never leaks the exception message by default', function (): void {
         }),
     ];
 
-    $component = Livewire::test(PostsTable::class)->instance();
+    $component = mountPostsTable();
 
     $result = app(BatchResolver::class)->resolve($component, tokensFor('slow', [$bad]));
 
@@ -100,7 +104,7 @@ it('refuses tokens for records outside the table query', function (): void {
     // Scope the table so author 999 is invisible.
     PostsTable::$scope = fn ($query) => $query->where('author_id', 1);
 
-    $component = Livewire::test(PostsTable::class)->instance();
+    $component = mountPostsTable();
 
     $result = app(BatchResolver::class)->resolve($component, tokensFor('slow', [$visible, $hidden]));
 
@@ -115,7 +119,7 @@ it('discards malformed and unknown-column tokens', function (): void {
         AsyncColumn::make('slow')->resolveUsing(fn (): string => 'v'),
     ];
 
-    $component = Livewire::test(PostsTable::class)->instance();
+    $component = mountPostsTable();
 
     $result = app(BatchResolver::class)->resolve($component, [
         'not-a-token!!',
@@ -133,7 +137,7 @@ it('ignores a token for a column that exists but is not an AsyncColumn', functio
         AsyncColumn::make('slow')->resolveUsing(fn (): string => 'v'),
     ];
 
-    $component = Livewire::test(PostsTable::class)->instance();
+    $component = mountPostsTable();
 
     $titleToken = (new CellToken('title', (string) $post->getKey()))->encode();
     $slowToken = (new CellToken('slow', (string) $post->getKey()))->encode();
@@ -178,7 +182,7 @@ it('refuses a token for a column that is hidden or toggled off', function (): vo
             }),
     ];
 
-    $component = Livewire::test(PostsTable::class)->instance();
+    $component = mountPostsTable();
 
     // Toggle the third column off through the same public API the column
     // manager UI uses, so the test exercises real toggle state rather than a
@@ -210,7 +214,7 @@ it('truncates an over-cap batch to the configured max_batch_size', function (): 
         AsyncColumn::make('slow')->resolveUsing(fn (Post $record): string => 'v-'.$record->getKey()),
     ];
 
-    $component = Livewire::test(PostsTable::class)->instance();
+    $component = mountPostsTable();
 
     $result = app(BatchResolver::class)->resolve($component, tokensFor('slow', $posts));
 
@@ -234,7 +238,7 @@ it('falls back to the default max_batch_size instead of disabling the cap when i
         AsyncColumn::make('slow')->resolveUsing(fn (Post $record): string => 'v-'.$record->getKey()),
     ];
 
-    $component = Livewire::test(PostsTable::class)->instance();
+    $component = mountPostsTable();
 
     $result = app(BatchResolver::class)->resolve($component, tokensFor('slow', $posts));
 
@@ -248,7 +252,7 @@ it('degrades a column to error cells when hydration itself fails, instead of thr
         AsyncColumn::make('slow')->resolveUsing(fn (): string => 'v'),
     ];
 
-    $component = Livewire::test(PostsTable::class)->instance();
+    $component = mountPostsTable();
 
     // Break the table's own query only AFTER the component has already mounted
     // and rendered successfully, so it's specifically the resolver's hydration
@@ -292,7 +296,7 @@ it('does not let a throwing errorStateUsing() during a hydration failure escape 
 
     // Mounted while the table is empty, so the column is never record()-bound
     // by an initial listing render.
-    $component = Livewire::test(PostsTable::class)->instance();
+    $component = mountPostsTable();
 
     $post = Post::create(['title' => 'One']);
 
@@ -330,7 +334,7 @@ it('degrades to the default error state when errorStateUsing() itself throws for
             }),
     ];
 
-    $component = Livewire::test(PostsTable::class)->instance();
+    $component = mountPostsTable();
 
     $result = app(BatchResolver::class)->resolve($component, tokensFor('slow', [$ok, $bad]));
 
@@ -381,7 +385,7 @@ it('excludes a record hidden by an active table filter, without invoking its res
             ->default(),
     ];
 
-    $component = Livewire::test(PostsTable::class)->instance();
+    $component = mountPostsTable();
 
     // Sanity: the filter genuinely excludes $hidden from the table's own listing
     // query, or this test would prove nothing about filter enforcement.
@@ -412,9 +416,7 @@ it('does NOT apply the active search term when resolving cells, unlike filterTab
         }),
     ];
 
-    $component = Livewire::test(PostsTable::class)
-        ->set('tableSearch', 'Alpha')
-        ->instance();
+    $component = mountPostsTable(fn ($testable) => $testable->set('tableSearch', 'Alpha'));
 
     // Sanity: the active search genuinely excludes $excludedBySearch from the
     // table's own listing query, or this test would prove nothing.
@@ -452,7 +454,12 @@ it('does NOT apply the active search term when resolving cells, unlike filterTab
 it("uses the table's own record key, not the raw model key, for the resolved cell and its cache key", function (): void {
     $post = Post::create(['title' => 'One']);
 
-    PostsTable::$recordKeyUsing = fn (Post $record): string => str_pad((string) $record->getKey(), 3, '0', STR_PAD_LEFT);
+    PostsTable::$recordKeyUsing = fn (Model|array $record): string => str_pad(
+        (string) (is_array($record) ? ($record['id'] ?? '') : $record->getKey()),
+        3,
+        '0',
+        STR_PAD_LEFT,
+    );
 
     PostsTable::$columns = [
         AsyncColumn::make('slow')
@@ -461,7 +468,7 @@ it("uses the table's own record key, not the raw model key, for the resolved cel
             ->view('async-column-tests::record-key'),
     ];
 
-    $component = Livewire::test(PostsTable::class)->instance();
+    $component = mountPostsTable();
 
     // The client mints its token from the table's own (overridden) record
     // key — exactly what AsyncColumn::getCellToken() does in production.
@@ -473,6 +480,8 @@ it("uses the table's own record key, not the raw model key, for the resolved cel
     $result = app(BatchResolver::class)->resolve($component, [$token]);
 
     $column = $component->getTable()->getColumn('slow');
+    expect($column)->toBeInstanceOf(AsyncColumn::class);
+    assert($column instanceof AsyncColumn);
 
     expect($result['cells'][$token]['html'])->toContain('data-record-key="001"')
         ->and($result['cells'][$token]['html'])->not->toContain('data-record-key="1"')
