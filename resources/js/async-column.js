@@ -32,6 +32,14 @@ document.addEventListener('alpine:init', () => {
         // in-flight.
         tracked: new WeakSet(),
 
+        // WeakMap<el, string> — the cell's server-rendered loading markup, captured
+        // before we ever overwrite it. renderFailed() replaces that markup with the
+        // error text, so without a copy there is nothing to put back when the user
+        // clicks retry, and the retry reads as a no-op until the response lands.
+        // Whatever the developer configured via ->loadingState() is preserved, not a
+        // hardcoded skeleton.
+        loading: new WeakMap(),
+
         scheduled: false,
         observer: null,
 
@@ -51,6 +59,15 @@ document.addEventListener('alpine:init', () => {
             // a re-registration is actually warranted.
             if (el.dataset.asyncColumnSettled === '1') {
                 return
+            }
+
+            // Capture the loading markup while the element still holds it — before
+            // the cache repaint below, and before anything else can overwrite it. On
+            // a post-morph re-registration the server has just re-sent fresh
+            // placeholder markup, so this correctly re-captures rather than going
+            // stale.
+            if (! this.loading.has(el)) {
+                this.loading.set(el, el.innerHTML)
             }
 
             const componentId = this.componentIdFor(el)
@@ -216,6 +233,10 @@ document.addEventListener('alpine:init', () => {
                     el.dataset.asyncColumnError = cell.error ? '1' : '0'
                     el.dataset.asyncColumnSettled = '1'
                     this.tracked.delete(el)
+
+                    if (cell.error) {
+                        this.appendRetryAffordance(el)
+                    }
                 })
             })
 
@@ -253,19 +274,43 @@ document.addEventListener('alpine:init', () => {
                 el.appendChild(message)
             }
 
-            if (el.dataset.asyncColumnRetryable === '1') {
-                el.appendChild(document.createTextNode(' '))
+            this.appendRetryAffordance(el)
+        },
 
-                const retry = document.createElement('span')
-                retry.className = 'fi-async-column-retry'
-                retry.textContent = el.dataset.asyncColumnRetryLabel || ''
-                el.appendChild(retry)
+        // Shared by renderFailed() (client-side failures) and apply()'s error branch
+        // (a resolver that threw server-side). Both are failures the user can retry
+        // by clicking, so both need the visible cue — otherwise whether the hint
+        // appears depends on where the failure happened, which is meaningless to the
+        // person looking at the cell.
+        appendRetryAffordance(el) {
+            if (el.dataset.asyncColumnRetryable !== '1') {
+                return
             }
+
+            const label = el.dataset.asyncColumnRetryLabel
+
+            if (! label) {
+                return
+            }
+
+            el.appendChild(document.createTextNode(' '))
+
+            const retry = document.createElement('span')
+            retry.className = 'fi-async-column-retry'
+            retry.textContent = label
+            el.appendChild(retry)
         },
 
         retry(el) {
             delete el.dataset.asyncColumnError
             delete el.dataset.asyncColumnSettled
+
+            // Put the loading markup back, so the click has visible effect straight
+            // away. Without this the error text sits there unchanged until the
+            // response lands and the retry reads as a dead button.
+            if (this.loading.has(el)) {
+                el.innerHTML = this.loading.get(el)
+            }
 
             const token = el.dataset.asyncColumnToken
             const componentId = this.componentIdFor(el)
