@@ -26,18 +26,21 @@ Filament panel already does. If you're using `filament/tables` on its own, outsi
 sure your layout includes those two directives.
 
 > [!IMPORTANT]
-> **Standalone `filament/tables` users must run `php artisan filament:assets` after installing.**
-> A registered asset still has to be *copied* into `public/` before `@filamentStyles` /
-> `@filamentScripts` can serve it. A Filament panel install (`filament:install --panels`) wires a
-> `post-autoload-dump` hook into your app's own `composer.json` that keeps this in sync
-> automatically on every `composer update` - but that hook is a side effect of the panel
-> installer, not something this package (or `filament/tables` alone) can register on its own.
-> Without it, the JS and CSS 404, Alpine throws a console error on every cell, and every column
-> is stuck on its skeleton permanently. The Alpine store lookup itself degrades gracefully in this
-> case (`$store.asyncColumn?.register($el)`), so a missing asset means a static skeleton rather
-> than a broken page - but running `php artisan filament:assets` (and re-running it after every
-> `composer update`, or adding the same hook Filament's own installer adds) is what actually fixes
-> it.
+> **Using `filament/tables` outside a panel? Run `php artisan filament:assets` after installing,
+> and again after every `composer update`.**
+>
+> Registering an asset is not the same as publishing one. The file still has to be *copied* into
+> `public/` before `@filamentStyles` / `@filamentScripts` can serve it.
+>
+> - **Panel installs already handle this.** `filament:install --panels` adds a
+>   `post-autoload-dump` hook to your application's `composer.json`, which re-copies assets on
+>   every `composer update`. That hook belongs to the panel installer - neither this package nor
+>   `filament/tables` can register it on your behalf.
+> - **Without it, the JS and CSS 404.** Alpine throws a console error on every cell, and every
+>   column stays on its loading skeleton indefinitely.
+> - **The failure is quiet, not loud.** The store lookup is optional-chained
+>   (`$store.asyncColumn?.register($el)`), so a missing asset leaves a static skeleton rather than
+>   breaking the page - which also makes the symptom easy to misread as a bug in the column.
 
 ```bash
 php artisan filament:assets
@@ -191,17 +194,29 @@ to discover:
 
 ## Security
 
-Records are hydrated exclusively through the table's **own** Eloquent query, scoped exactly the
-way Filament scopes its own single-record resolution - tenancy, global scopes, and active table
-filters all apply. (The active *search* term is the one deliberate exception: it is not applied
-when resolving, so a cell that was already in flight doesn't vanish out from under the batch
-request just because someone typed into the search box in the meantime - search narrows what's
-*displayed*, it doesn't gate what's *authorized*.) A hand-crafted token for a row outside that
-scope simply never comes back from the query; no cell is produced for it. Only columns genuinely
-defined on the table - and only `AsyncColumn` instances among them, currently visible and not
-toggled off - are resolvable; an unknown, mistyped, hidden, or foreign column name is silently
-dropped rather than surfaced as an error. In short: a forged token cannot reach data, or even the
-existence of a column, that the requesting user could not already see through the table itself.
+Cell tokens travel to the browser and come back, so they are treated as untrusted input. The
+guarantee is:
+
+> A forged token cannot reach data - or even reveal that a column exists - that the requesting
+> user could not already see through the table itself.
+
+Two mechanisms enforce it.
+
+**Records are hydrated only through the table's own Eloquent query.** It is scoped exactly the way
+Filament scopes its own single-record resolution, so tenancy, global scopes and active table
+filters all apply automatically rather than being reimplemented here. A hand-crafted token for a
+row outside that scope simply never comes back from the query, and no cell is produced for it.
+
+**Only columns genuinely defined on the table are resolvable** - and among those, only
+`AsyncColumn` instances that are currently visible and not toggled off. An unknown, mistyped,
+hidden or foreign column name is dropped silently rather than reported as an error, so a client
+cannot use error responses to probe which columns exist.
+
+> [!NOTE]
+> **The active search term is a deliberate exception: it is not applied when resolving.**
+> Search narrows what is *displayed*; it does not gate what is *authorized*. Applying it would let
+> a cell that was already in flight vanish out from under its batch request the moment someone
+> typed into the search box.
 
 ## Configuration reference
 
