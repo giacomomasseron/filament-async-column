@@ -7,7 +7,40 @@
 # against this project's actual vendor/phpstan/extension-installer/src/GeneratedConfig.php.
 
 parameters:
-    level: 5
+    level: 6
     paths:
         - src
+        - tests
     tmpDir: build/phpstan
+
+    # Every entry below is a limitation of a testing framework's own type
+    # declarations, not a defect in this package. They are scoped to tests/ so
+    # nothing in src/ can hide behind them.
+    ignoreErrors:
+        # Pest's expect() is generic over the asserted value; when that value is
+        # `mixed` (which it is for most of these assertions) the template type is
+        # genuinely unresolvable and there is nothing to annotate.
+        -
+            identifier: argument.templateType
+            path: tests/*
+
+        # Livewire's Testable exposes ->effects dynamically via __get, so there is
+        # no declared property for PHPStan to find.
+        -
+            message: '#Access to an undefined property Livewire\\Features\\SupportTesting\\Testable::\$effects#'
+            path: tests/*
+
+        # Larastan wants literal view-string constants. These view names are
+        # fixture-local and resolved at runtime by the test harness.
+        -
+            identifier: argument.type
+            message: '#expects view-string\|null, string given#'
+            path: tests/*
+
+        # This is the canary test guarding the protected Filament internal that
+        # BatchResolver::scopedQuery() reaches through spatie/invade. PHPStan
+        # statically proving the method exists TODAY is exactly the state we want;
+        # the test exists to fail at RUNTIME if a future Filament release removes it.
+        -
+            identifier: function.alreadyNarrowedType
+            path: tests/Feature/BatchResolverTest.php

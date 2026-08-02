@@ -184,6 +184,8 @@ class AsyncColumn extends TextColumn
      * cell uses — so formatting, escaping, arrays/lists, badges, colors, icons,
      * weight, prefix/suffix etc. all behave exactly as they would on a normal
      * TextColumn, instead of a hand-rolled subset of that behavior.
+     *
+     * @param  Model|array<string, mixed>  $record
      */
     public function renderResolvedHtml(Model|array $record, mixed $state): string
     {

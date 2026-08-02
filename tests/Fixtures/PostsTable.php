@@ -28,7 +28,7 @@ class PostsTable extends Component implements HasActions, HasSchemas, HasTable
     /** @var array<int, Column> */
     public static array $columns = [];
 
-    /** @var (Closure(Builder): Builder)|null */
+    /** @var (Closure(Builder<Post>): Builder<Post>)|null */
     public static $scope = null;
 
     /** @var array<int, BaseFilter> */
@@ -41,7 +41,7 @@ class PostsTable extends Component implements HasActions, HasSchemas, HasTable
      * customizes it — the exact scenario Filament\Tables\Contracts\HasTable
      * ::getTableRecordKey() exists to support.
      *
-     * @var (Closure(Model|array): string)|null
+     * @var (Closure(Model|array<string, mixed>): string)|null
      */
     public static ?Closure $recordKeyUsing = null;
 

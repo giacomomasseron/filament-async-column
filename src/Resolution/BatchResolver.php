@@ -189,6 +189,8 @@ class BatchResolver
      * surfaces in error tracking instead of silently reintroducing "a forged token
      * bypasses table filters". Never throw: one Filament upgrade should not take
      * down every table using this column.
+     *
+     * @return Builder<Model>|Relation<Model, Model, mixed>|null
      */
     protected function scopedQuery(HasTable $component, Table $table): Builder|Relation|null
     {

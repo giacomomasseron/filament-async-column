@@ -5,7 +5,6 @@ use GiacomoMasseroni\AsyncColumn\Resolution\BatchResolver;
 use GiacomoMasseroni\AsyncColumn\Resolution\CellToken;
 use GiacomoMasseroni\AsyncColumn\Tests\Fixtures\Post;
 use GiacomoMasseroni\AsyncColumn\Tests\Fixtures\PostsTable;
-use Livewire\Livewire;
 
 it('does not cache by default', function (): void {
     $post = Post::create(['title' => 'One']);
@@ -19,7 +18,7 @@ it('does not cache by default', function (): void {
         }),
     ];
 
-    $component = Livewire::test(PostsTable::class)->instance();
+    $component = mountPostsTable();
     $tokens = [(new CellToken('slow', (string) $post->getKey()))->encode()];
 
     app(BatchResolver::class)->resolve($component, $tokens);
@@ -42,7 +41,7 @@ it('reuses a cached value within the ttl', function (): void {
             }),
     ];
 
-    $component = Livewire::test(PostsTable::class)->instance();
+    $component = mountPostsTable();
     $tokens = [(new CellToken('slow', (string) $post->getKey()))->encode()];
 
     app(BatchResolver::class)->resolve($component, $tokens);
@@ -76,10 +75,10 @@ it('busts the cache when the version changes', function (): void {
     $tokens = [(new CellToken('slow', (string) $post->getKey()))->encode()];
 
     PostsTable::$columns = [$makeColumn('a')];
-    app(BatchResolver::class)->resolve(Livewire::test(PostsTable::class)->instance(), $tokens);
+    app(BatchResolver::class)->resolve(mountPostsTable(), $tokens);
 
     PostsTable::$columns = [$makeColumn('b')];
-    app(BatchResolver::class)->resolve(Livewire::test(PostsTable::class)->instance(), $tokens);
+    app(BatchResolver::class)->resolve(mountPostsTable(), $tokens);
 
     expect($calls)->toBe(2);
 });
@@ -98,7 +97,7 @@ it('does not cache a failed resolution', function (): void {
             }),
     ];
 
-    $component = Livewire::test(PostsTable::class)->instance();
+    $component = mountPostsTable();
     $tokens = [(new CellToken('slow', (string) $post->getKey()))->encode()];
 
     app(BatchResolver::class)->resolve($component, $tokens);
@@ -126,7 +125,7 @@ it('caches a legitimately null resolved value instead of re-running the resolver
             }),
     ];
 
-    $component = Livewire::test(PostsTable::class)->instance();
+    $component = mountPostsTable();
     $tokens = [(new CellToken('slow', (string) $post->getKey()))->encode()];
 
     $first = app(BatchResolver::class)->resolve($component, $tokens);
@@ -158,7 +157,7 @@ it('never actually persists a value when cacheFor(0) is used, so the resolver ru
             }),
     ];
 
-    $component = Livewire::test(PostsTable::class)->instance();
+    $component = mountPostsTable();
     $tokens = [(new CellToken('slow', (string) $post->getKey()))->encode()];
 
     app(BatchResolver::class)->resolve($component, $tokens);

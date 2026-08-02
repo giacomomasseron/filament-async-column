@@ -3,7 +3,6 @@
 use GiacomoMasseroni\AsyncColumn\Columns\AsyncColumn;
 use GiacomoMasseroni\AsyncColumn\Tests\Fixtures\Post;
 use GiacomoMasseroni\AsyncColumn\Tests\Fixtures\PostsTable;
-use Livewire\Livewire;
 
 /**
  * AsyncColumn::getState() resolves its cache key via
@@ -17,9 +16,13 @@ function mountColumn(AsyncColumn $column): AsyncColumn
 {
     PostsTable::$columns = [$column];
 
-    $table = Livewire::test(PostsTable::class)->instance()->getTable();
+    $mounted = mountPostsTable()->getTable()->getColumn($column->getName());
 
-    return $table->getColumn($column->getName());
+    if (! $mounted instanceof AsyncColumn) {
+        throw new RuntimeException("Expected column [{$column->getName()}] to be mounted as an AsyncColumn.");
+    }
+
+    return $mounted;
 }
 
 it('renders a plain string, escaped', function (): void {
