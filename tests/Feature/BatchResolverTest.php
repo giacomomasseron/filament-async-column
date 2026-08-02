@@ -87,7 +87,7 @@ it('never leaks the exception message by default', function (): void {
 
     $result = app(BatchResolver::class)->resolve($component, tokensFor('slow', [$bad]));
 
-    // Assert a cell was actually produced (and is clean) — not merely that an
+    // Assert a cell was actually produced (and is clean) - not merely that an
     // empty payload happens not to contain the secret.
     expect($result['cells'])->toHaveCount(1)
         ->and(json_encode($result))->not->toContain('secret-api-key-12345');
@@ -144,7 +144,7 @@ it('ignores a token for a column that exists but is not an AsyncColumn', functio
 
     $result = app(BatchResolver::class)->resolve($component, [$titleToken, $slowToken]);
 
-    // Not just "one cell survived" — specifically the AsyncColumn's cell, not
+    // Not just "one cell survived" - specifically the AsyncColumn's cell, not
     // the plain TextColumn's.
     expect($result['cells'])->toHaveKey($slowToken)
         ->and($result['cells'])->not->toHaveKey($titleToken)
@@ -224,7 +224,7 @@ it('truncates an over-cap batch to the configured max_batch_size', function (): 
 /**
  * Regression: `if ($maxBatchSize > 0) { array_slice(...) }` treats a
  * max_batch_size of 0 as "skip truncation" instead of "invalid, use the
- * default" — so a malformed env value (ASYNC_COLUMN_MAX_BATCH_SIZE=notanumber
+ * default" - so a malformed env value (ASYNC_COLUMN_MAX_BATCH_SIZE=notanumber
  * casts to 0 via (int)) silently DISABLES the cap it was supposed to enforce.
  * 205 tokens (over the package's documented default of 200) proves whether
  * the cap actually held: an unbounded batch would resolve all 205.
@@ -256,7 +256,7 @@ it('degrades a column to error cells when hydration itself fails, instead of thr
 
     // Break the table's own query only AFTER the component has already mounted
     // and rendered successfully, so it's specifically the resolver's hydration
-    // call that fails — not table setup.
+    // call that fails - not table setup.
     Schema::drop('posts');
 
     $token = (new CellToken('slow', (string) $post->getKey()))->encode();
@@ -269,22 +269,22 @@ it('degrades a column to error cells when hydration itself fails, instead of thr
 
 /**
  * Regression: buildErrorCell() calls $column->getErrorState($exception), which
- * evaluate()s a developer closure — and both of buildErrorCell()'s call sites
+ * evaluate()s a developer closure - and both of buildErrorCell()'s call sites
  * are inside catch blocks, so anything IT throws propagates out of resolve()
  * and kills the whole batch, contradicting "one failure never breaks the
  * batch".
  *
  * This is the hydration-failure call site specifically: the $column passed to
  * buildErrorCell() there is the table's own live, shared column instance
- * (never cloned — cloning only happens per-cell, in resolveCell(), after
+ * (never cloned - cloning only happens per-cell, in resolveCell(), after
  * hydration succeeds). HasRecord::record() is a plain mutable property that is
  * never reset, so it stays null unless some earlier table render looped over
- * at least one row and called ->record() on this exact column — which is why
+ * at least one row and called ->record() on this exact column - which is why
  * the table is mounted here with ZERO rows, before the one Post used for the
  * token is created. Filament's
  * Column::resolveDefaultClosureDependencyForEvaluationByName() then resolves a
  * `record`-named closure parameter to $this->getRecord() by NAME before ever
- * looking at its type — so a `Post $record` (non-nullable) parameter receives
+ * looking at its type - so a `Post $record` (non-nullable) parameter receives
  * a literal null and PHP itself throws a TypeError when the closure runs.
  */
 it('does not let a throwing errorStateUsing() during a hydration failure escape resolve()', function (): void {
@@ -312,7 +312,7 @@ it('does not let a throwing errorStateUsing() during a hydration failure escape 
 
 /**
  * Same guarantee, but for the per-cell call site in resolveCell(): the record
- * IS bound here, but errorStateUsing() itself throws — e.g. because it calls
+ * IS bound here, but errorStateUsing() itself throws - e.g. because it calls
  * the same failing service the resolver just called. Sibling cells in the same
  * batch must still resolve normally.
  */
@@ -352,7 +352,7 @@ it('degrades to the default error state when errorStateUsing() itself throws for
  * ::applyFiltersToTableQuery() via spatie/invade because it is `protected` and not
  * part of the public HasTable contract. If a Filament upgrade renames or removes
  * it, BatchResolver falls back to the public filterTableQuery() and then to an
- * unfiltered query (see scopedQuery()'s docblock) rather than throwing — which
+ * unfiltered query (see scopedQuery()'s docblock) rather than throwing - which
  * means the "table filters are bypassed by a forged token" gap could silently
  * reopen without a single test failing. This test exists purely to make that
  * upgrade loud: if it fails, go update BatchResolver::scopedQuery() to match
@@ -377,7 +377,7 @@ it('excludes a record hidden by an active table filter, without invoking its res
     ];
 
     // A real Filament filter, active by default (no user interaction needed),
-    // built through the actual filter API — not a stand-in that modifies the
+    // built through the actual filter API - not a stand-in that modifies the
     // base query directly, which would prove nothing about filter handling.
     PostsTable::$filters = [
         Filter::make('onlyAuthorOne')
@@ -436,7 +436,7 @@ it('does NOT apply the active search term when resolving cells, unlike filterTab
 /**
  * Regression: resolveCell() bound the cloned cell's own recordKey via
  * `(string) $record->getKey()`, and resolveState() built the cache key the
- * same way — but the client mints its token from $table->getRecordKey($record)
+ * same way - but the client mints its token from $table->getRecordKey($record)
  * (Filament\Tables\Contracts\HasTable::getTableRecordKey()), which a hosting
  * component is free to override. When it does, the raw model key and the
  * table's own record key diverge, corrupting both:
@@ -446,7 +446,7 @@ it('does NOT apply the active search term when resolving cells, unlike filterTab
  *    identity the rest of the table (and any other cache reader) uses.
  *
  * PostsTable::$recordKeyUsing lets this test swap in a zero-padded override
- * ('001' instead of '1') — still findable by whereKey() thanks to SQLite's
+ * ('001' instead of '1') - still findable by whereKey() thanks to SQLite's
  * numeric-string coercion (verified directly against this project's own
  * sqlite :memory: connection), so hydration genuinely succeeds and this test
  * exercises the real resolve() path, not a stand-in for it.
@@ -471,7 +471,7 @@ it("uses the table's own record key, not the raw model key, for the resolved cel
     $component = mountPostsTable();
 
     // The client mints its token from the table's own (overridden) record
-    // key — exactly what AsyncColumn::getCellToken() does in production.
+    // key - exactly what AsyncColumn::getCellToken() does in production.
     $tableRecordKey = $component->getTableRecordKey($post);
     expect($tableRecordKey)->toBe('001');
 

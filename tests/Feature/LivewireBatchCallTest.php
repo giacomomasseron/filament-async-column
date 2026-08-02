@@ -51,7 +51,7 @@ it('skips the re-render entirely, so the response carries no re-rendered HTML', 
         ->effects;
 
     // skipRender() means HandleComponents::render() never runs, so the 'html'
-    // effect key is never populated — proving the table query was not re-run
+    // effect key is never populated - proving the table query was not re-run
     // and no DOM morph will fight the cell the client already injected.
     expect($effects)->not->toHaveKey('html');
 });

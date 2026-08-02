@@ -19,7 +19,7 @@ use Livewire\ComponentHook;
  * component in the app (ComponentHookRegistry::proxyCallToHooks() loops every
  * registered hook for every component), so both guards below matter: the method
  * name check keeps every *other* method from being intercepted (a HasTable
- * component defining its own resolveAsyncColumns() IS shadowed by this hook —
+ * component defining its own resolveAsyncColumns() IS shadowed by this hook -
  * that name is reserved), and the HasTable check keeps a component with no
  * Filament table from being touched at all, even if it happened to define a
  * same-named method.
@@ -50,7 +50,7 @@ class AsyncColumnHook extends ComponentHook
 
         // ComponentHook::$component (declared in vendor/livewire/livewire, see the
         // class docblock above) is untyped, so an `instanceof HasTable` narrows
-        // PHPStan's view of it to the HasTable *interface* only — losing the fact
+        // PHPStan's view of it to the HasTable *interface* only - losing the fact
         // that, at runtime, it is always also the hosting Livewire\Component
         // instance (skipRender() below lives on Component, not on HasTable). This
         // local re-declares both halves of that real, dual type explicitly instead

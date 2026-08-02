@@ -27,7 +27,7 @@ use Throwable;
  *
  *  - Records are hydrated exclusively through the table's OWN query, scoped
  *    exactly the way Filament itself scopes a single-record lookup (see
- *    scopedQuery() below) — never Model::find(). Tenancy, global scopes, table
+ *    scopedQuery() below) - never Model::find(). Tenancy, global scopes, table
  *    filters and any ->modifyQueryUsing() constraints therefore apply. A key for
  *    a row outside that query simply never comes back from ->get(), so no cell
  *    is produced for it.
@@ -38,7 +38,7 @@ use Throwable;
  *    or toggled off by the user ($column->isToggledHidden() === true) is rejected
  *    the same way. Table::getColumn() would return every registered column
  *    regardless of visibility, so this looks the token's column up through
- *    Table::getVisibleColumns() instead — without that, a forged token could
+ *    Table::getVisibleColumns() instead - without that, a forged token could
  *    reveal a value the table itself never rendered a placeholder for.
  *
  * The incoming token array is also capped at config('async-column.max_batch_size')
@@ -53,7 +53,7 @@ class BatchResolver
      * Fallback used both when config('async-column.max_batch_size') is absent
      * and when it resolves to something <= 0 (including a malformed env value:
      * (int) casts a non-numeric ASYNC_COLUMN_MAX_BATCH_SIZE to 0). A cap of 0
-     * or less is nonsensical as "the maximum number of tokens to process" — it
+     * or less is nonsensical as "the maximum number of tokens to process" - it
      * must never be read as "no cap".
      */
     protected const DEFAULT_MAX_BATCH_SIZE = 200;
@@ -95,15 +95,15 @@ class BatchResolver
             // $c->isVisible() && ! $c->isToggledHidden()) (verified against
             // filament/tables' Table\Concerns\HasColumns), memoised behind
             // $cachedVisibleColumns and keyed by column name exactly like
-            // getColumns() — so this single lookup is both the "only columns
+            // getColumns() - so this single lookup is both the "only columns
             // genuinely defined on this table" check and the "currently visible,
             // not toggled off" check getColumn() alone doesn't give us, without
             // re-evaluating a policy-backed ->visible() a second time per token.
             $column = $table->getVisibleColumns()[$token->columnName] ?? null;
 
-            // Only columns actually defined on this table — currently visible,
-            // not toggled off — are resolvable. A forged, hidden, or foreign
-            // column name simply produces nothing — never an error, never a
+            // Only columns actually defined on this table - currently visible,
+            // not toggled off - are resolvable. A forged, hidden, or foreign
+            // column name simply produces nothing - never an error, never a
             // callable built from client input.
             if (! $column instanceof AsyncColumn) {
                 continue;
@@ -134,13 +134,13 @@ class BatchResolver
                 }
 
                 // Hydrate through the table's OWN (now filter-scoped) query. A forged
-                // record key cannot reach a row the user could not already see — it
+                // record key cannot reach a row the user could not already see - it
                 // simply never comes back here.
                 $records = $query->whereKey(array_keys($tokensByRecordKey))->get();
             } catch (Throwable $exception) {
                 // A query-level failure (bad connection, broken filter, broken
                 // constraint, ...) must not abort the whole batch any more than a
-                // single failing resolver does — every cell in this column degrades
+                // single failing resolver does - every cell in this column degrades
                 // to an error cell instead.
                 report($exception);
 
@@ -168,22 +168,22 @@ class BatchResolver
 
     /**
      * Builds the query cell hydration reads from, scoped exactly the way Filament
-     * scopes a single-record lookup — filters applied, search deliberately NOT
+     * scopes a single-record lookup - filters applied, search deliberately NOT
      * applied (a search term in flight must not make an in-flight cell disappear).
      *
      * Filament\Tables\Concerns\HasFilters::applyFiltersToTableQuery() (verified
      * against filament/tables 5.7.5) is the exact method Filament's own canonical
      * per-record resolution, HasRecords::resolveTableRecord(), uses for this. It is
      * `protected` on the Livewire table component and not part of the public
-     * HasTable contract this class is handed, so it is reached via spatie/invade —
+     * HasTable contract this class is handed, so it is reached via spatie/invade -
      * a direct dependency of this package (see composer.json) rather than the
-     * transitive copy filament/support happens to pull in — instead of
+     * transitive copy filament/support happens to pull in - instead of
      * reimplementing filter application ourselves and risking silent drift from
      * Filament's own behaviour.
      *
      * Because that call reaches a protected internal Filament may rename or
      * re-signature in any release, this is guarded: if the internal is gone, fall
-     * back to the public filterTableQuery() (stricter — it also applies search,
+     * back to the public filterTableQuery() (stricter - it also applies search,
      * which is safe here even though it isn't what we want); if that is gone too,
      * fall back to the unscoped query and report() a RuntimeException so the gap
      * surfaces in error tracking instead of silently reintroducing "a forged token
@@ -211,7 +211,7 @@ class BatchResolver
         report(new RuntimeException(
             'AsyncColumn\'s BatchResolver could not find Filament\'s applyFiltersToTableQuery() '
             .'or filterTableQuery() method on ['.$component::class.']. Table filters will NOT be '
-            .'applied when resolving async cells until this is fixed — Filament appears to have '
+            .'applied when resolving async cells until this is fixed - Filament appears to have '
             .'changed an internal API this package depends on.'
         ));
 
@@ -227,15 +227,15 @@ class BatchResolver
         // view, ...) is shared, but record, state and cached state must not bleed
         // between rows sharing the same underlying column definition.
         //
-        // $recordKey is $table->getRecordKey($record) — the caller's already-
+        // $recordKey is $table->getRecordKey($record) - the caller's already-
         // computed value, the SAME one the client minted its token from
         // (Filament\Tables\Contracts\HasTable::getTableRecordKey(), overridable
-        // per component) — deliberately not (string) $record->getKey() here.
+        // per component) - deliberately not (string) $record->getKey() here.
         // A component overriding getTableRecordKey() would otherwise leave this
         // cell's own recordKey() (visible to a developer's custom ->view() via
         // $getRecordKey(), e.g. to build its own mountTableAction(...) call) and
         // the cache key below out of sync with the identity the rest of the
-        // table — and the client — use for this exact row.
+        // table - and the client - use for this exact row.
         $cell = clone $column;
         $cell->record($record);
         $cell->recordKey($recordKey);
@@ -264,7 +264,7 @@ class BatchResolver
     {
         // The exception is only ever exposed to an explicit developer callback
         // (errorStateUsing()) via getErrorState(). Never interpolate $exception
-        // or its message directly here — resolvers hit APIs with credentials in
+        // or its message directly here - resolvers hit APIs with credentials in
         // URLs and databases that echo SQL back in their error messages.
         //
         // getErrorState() itself can throw: it evaluate()s that developer
@@ -274,7 +274,7 @@ class BatchResolver
         // TypeError) or may simply fail on its own (e.g. it calls the same
         // service the resolver just failed against). Both call sites are
         // inside a catch block, so an uncaught throw here would propagate out
-        // of resolve() and take down the entire batch — exactly the
+        // of resolve() and take down the entire batch - exactly the
         // "one failure never breaks the batch" guarantee this class exists to
         // provide. Degrade to the default translated message instead.
         try {
@@ -322,11 +322,11 @@ class BatchResolver
      *
      * Illuminate\Cache\Repository::get() collapses "nothing is cached under this
      * key" and "the cached value genuinely IS null" into the same bare PHP `null`
-     * (its `is_null($value)` check can't tell a Store miss from a stored null —
+     * (its `is_null($value)` check can't tell a Store miss from a stored null -
      * every built-in Store's get() returns plain `null` for both). Repository::
      * remember() is built directly on that check, so it would treat every
      * previously-null resolution as a permanent miss and silently re-run the
-     * resolver on every single batch despite cacheFor() — defeating caching for
+     * resolver on every single batch despite cacheFor() - defeating caching for
      * exactly the resolvers most likely to legitimately return null (a nullable
      * API field, "no data available"). Verified directly against this project's
      * vendor/laravel/framework Repository + ArrayStore, not assumed from the

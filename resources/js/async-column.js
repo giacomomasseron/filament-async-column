@@ -1,24 +1,24 @@
 document.addEventListener('alpine:init', () => {
     // Must stay in sync with GiacomoMasseroni\AsyncColumn\Livewire\AsyncColumnHook::METHOD
-    // — this string is the one place that constant is unavoidably duplicated, because
+    // - this string is the one place that constant is unavoidably duplicated, because
     // the PHP constant cannot be read from plain JS with no build step.
     const RESOLVE_METHOD = 'resolveAsyncColumns'
 
     window.Alpine.store('asyncColumn', {
-        // Map<componentId, Map<token, el[]>> — grouped by Livewire component (its
+        // Map<componentId, Map<token, el[]>> - grouped by Livewire component (its
         // wire:id) rather than one page-wide bag. BatchResolver::resolve() only ever
         // resolves columns against the CALLED component's own table, so a page with
         // several tables (e.g. a resource table plus a relation manager) must issue
         // one request PER TABLE. Routing every pending cell into a single component's
-        // call — which a page-wide bag would do — silently strands every other
+        // call - which a page-wide bag would do - silently strands every other
         // component's cells on their skeleton forever.
         pending: new Map(),
 
-        // Map<componentId, Map<token, html>> — likewise keyed by component. A
+        // Map<componentId, Map<token, html>> - likewise keyed by component. A
         // CellToken only encodes columnName + recordKey, so two different tables using
         // the same column name against a record with the same id produce
         // byte-identical tokens. An unscoped cache would let one table's resolved HTML
-        // get painted into another table's cell for a *different* underlying record —
+        // get painted into another table's cell for a *different* underlying record -
         // a data-correctness bug, not just a missed cache hit.
         cache: new Map(),
 
@@ -27,12 +27,12 @@ document.addEventListener('alpine:init', () => {
         // flag below: this covers the in-between window where a cell has been sent to
         // the server but no response has come back yet, so there is no dataset flag
         // yet to detect the duplicate against. Without this, the Livewire morph-hook
-        // safety net (see the bottom of this file) could enqueue — and request — the
+        // safety net (see the bottom of this file) could enqueue - and request - the
         // same cell twice if it fires while x-init's own registration is still
         // in-flight.
         tracked: new WeakSet(),
 
-        // WeakMap<el, string> — the cell's server-rendered loading markup, captured
+        // WeakMap<el, string> - the cell's server-rendered loading markup, captured
         // before we ever overwrite it. renderFailed() replaces that markup with the
         // error text, so without a copy there is nothing to put back when the user
         // clicks retry, and the retry reads as a no-op until the response lands.
@@ -53,15 +53,15 @@ document.addEventListener('alpine:init', () => {
             // Already reached a terminal state (resolved or failed) and nothing about
             // the DOM has changed since. Set by apply()/markFailed() below. Livewire's
             // own morph strips this attribute back off whenever it re-sends the
-            // server's fresh (unresolved) placeholder markup for this cell — see the
-            // morph-hook comment at the bottom of this file — so this flag reads as
+            // server's fresh (unresolved) placeholder markup for this cell - see the
+            // morph-hook comment at the bottom of this file - so this flag reads as
             // "settled" only while that's still true, and clears itself exactly when
             // a re-registration is actually warranted.
             if (el.dataset.asyncColumnSettled === '1') {
                 return
             }
 
-            // Capture the loading markup while the element still holds it — before
+            // Capture the loading markup while the element still holds it - before
             // the cache repaint below, and before anything else can overwrite it. On
             // a post-morph re-registration the server has just re-sent fresh
             // placeholder markup, so this correctly re-captures rather than going
@@ -82,7 +82,7 @@ document.addEventListener('alpine:init', () => {
             }
 
             // Already enqueued or observed by an earlier register() call on this
-            // exact element — must not enqueue (and therefore request) it a second
+            // exact element - must not enqueue (and therefore request) it a second
             // time.
             if (this.tracked.has(el)) {
                 return
@@ -143,7 +143,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         // One animation frame of debounce coalesces everything pending into as many
-        // requests as there are distinct Livewire components with pending cells —
+        // requests as there are distinct Livewire components with pending cells -
         // still exactly one request per component, no matter how many rows (including
         // several rows across several tables scrolling into view together) triggered
         // it within that frame.
@@ -202,10 +202,10 @@ document.addEventListener('alpine:init', () => {
         apply(componentId, batch, result) {
             const cells = (result && result.cells) || {}
 
-            // Any token the server declined to return — max_batch_size truncation, a
+            // Any token the server declined to return - max_batch_size truncation, a
             // record deleted between paint and resolve, a column toggled off
             // mid-flight, an array/data-source table whose scopedQuery() is null, ...
-            // — must not be left showing its loading skeleton forever with no way to
+            // - must not be left showing its loading skeleton forever with no way to
             // retry. Everything requested but absent from the response degrades to a
             // failed (and, if retryable, clickable) cell exactly like a network error
             // would.
@@ -255,7 +255,7 @@ document.addEventListener('alpine:init', () => {
         // leaving a cell shimmering forever with only the (invisible)
         // data-async-column-error="1" attribute as evidence anything went wrong.
         // Both labels are static, translated, developer-trusted strings rendered by
-        // placeholder.blade.php as data attributes (never the underlying exception —
+        // placeholder.blade.php as data attributes (never the underlying exception -
         // see BatchResolver::buildErrorCell()'s own comment on that), so they are
         // written via textContent rather than innerHTML: correct either way here,
         // but this way nothing downstream has to reason about escaping to stay safe.
@@ -279,7 +279,7 @@ document.addEventListener('alpine:init', () => {
 
         // Shared by renderFailed() (client-side failures) and apply()'s error branch
         // (a resolver that threw server-side). Both are failures the user can retry
-        // by clicking, so both need the visible cue — otherwise whether the hint
+        // by clicking, so both need the visible cue - otherwise whether the hint
         // appears depends on where the failure happened, which is meaningless to the
         // person looking at the cell.
         appendRetryAffordance(el) {
@@ -333,20 +333,20 @@ document.addEventListener('alpine:init', () => {
     // update that patches a keyed row in place rather than replacing it): Alpine's
     // morph integration only re-runs x-init on nodes the morph ADDS, never on ones it
     // merely UPDATES (verified against vendor/livewire/livewire's bundled
-    // @alpinejs/morph integration — Livewire.hook('morph.updated', ...) below is the
+    // @alpinejs/morph integration - Livewire.hook('morph.updated', ...) below is the
     // exact, real hook name for livewire/livewire 4.3.4, confirmed against that
     // vendor source, not guessed). A placeholder element that survives such a morph
     // has its children patched back to the server's fresh (unresolved) skeleton
     // markup without x-init ever re-running, so without this it would sit there
-    // forever — never consulting the client-side cache this file otherwise exists to
+    // forever - never consulting the client-side cache this file otherwise exists to
     // use for exactly this situation ("after a sort or paginate, rows we already
     // resolved should not hit the server again").
     //
     // register() call is deferred with queueMicrotask(): morph.updated fires for an
     // element BEFORE morphdom patches that same element's *children*
     // (patchAttributes -> updated() trigger -> patchChildren, in that order, per
-    // @alpinejs/morph's context.patch()), so calling register() synchronously here —
-    // and specifically a cache repaint via el.innerHTML — would be immediately
+    // @alpinejs/morph's context.patch()), so calling register() synchronously here -
+    // and specifically a cache repaint via el.innerHTML - would be immediately
     // clobbered by morphdom's own patchChildren call reverting it back to the
     // server's skeleton right after. Deferring to a microtask runs this after the
     // whole (synchronous) morph has finished.

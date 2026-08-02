@@ -42,7 +42,7 @@ it('omits the retry hook when retry is disabled', function (): void {
 /**
  * The client-side markFailed()/renderFailed() JS (async-column.js) needs the
  * translated error/retry text to make a failed cell's content visible instead
- * of hardcoding English into the JS — this is the server-rendered contract it
+ * of hardcoding English into the JS - this is the server-rendered contract it
  * reads via el.dataset, so it's tested here rather than in JS (this project
  * deliberately has no JS test runner).
  */

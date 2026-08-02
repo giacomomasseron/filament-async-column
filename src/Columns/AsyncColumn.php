@@ -156,7 +156,7 @@ class AsyncColumn extends TextColumn
      * Set the state that came back from an async resolution.
      *
      * HasCellState::state() routes through getStateUsing(), which this class
-     * overrides to throw — so assign the underlying property directly.
+     * overrides to throw - so assign the underlying property directly.
      *
      * The value is deliberately wrapped in a closure rather than assigned raw.
      * HasCellState::getState() (filament/support) branches on
@@ -180,8 +180,8 @@ class AsyncColumn extends TextColumn
      * Render the value that came back from an async resolution.
      *
      * Uses the developer's ->view() when one is set, otherwise delegates to
-     * TextColumn's own toEmbeddedHtml() — the same renderer every other TextColumn
-     * cell uses — so formatting, escaping, arrays/lists, badges, colors, icons,
+     * TextColumn's own toEmbeddedHtml() - the same renderer every other TextColumn
+     * cell uses - so formatting, escaping, arrays/lists, badges, colors, icons,
      * weight, prefix/suffix etc. all behave exactly as they would on a normal
      * TextColumn, instead of a hand-rolled subset of that behavior.
      *
@@ -211,7 +211,7 @@ class AsyncColumn extends TextColumn
     }
 
     /**
-     * Always render the placeholder — never the value.
+     * Always render the placeholder - never the value.
      *
      * ViewComponent::toHtml() would render the developer's ->view() synchronously
      * whenever hasView() is true, and TextColumn (via HasEmbeddedView) would otherwise
@@ -228,10 +228,10 @@ class AsyncColumn extends TextColumn
 
         // Larastan's view-string type calls view()->exists() against the Laravel
         // app IT boots for static analysis, which never runs this package's
-        // AsyncColumnServiceProvider::hasViews() registration — so the
+        // AsyncColumnServiceProvider::hasViews() registration - so the
         // 'async-column::' namespace can never resolve there even though every
         // RendersPlaceholderTest proves it resolves at runtime.
-        // @phpstan-ignore argument.type (namespaced package view, false positive — see comment above)
+        // @phpstan-ignore argument.type (namespaced package view, false positive - see comment above)
         return view('async-column::placeholder', [
             'token' => $token->encode(),
             'loadingState' => $this->getLoadingState(),
@@ -253,7 +253,7 @@ class AsyncColumn extends TextColumn
         if ($query === null && $condition !== false) {
             throw new LogicException(
                 'AsyncColumn ['.$this->getName().'] cannot be sorted, because its value is resolved after the query has run. '
-                .'Pass a query closure — sortable(query: fn (Builder $query, string $direction) => ...) — to sort it yourself.'
+                .'Pass a query closure - sortable(query: fn (Builder $query, string $direction) => ...) - to sort it yourself.'
             );
         }
 
@@ -265,7 +265,7 @@ class AsyncColumn extends TextColumn
         if ($query === null && $condition !== false) {
             throw new LogicException(
                 'AsyncColumn ['.$this->getName().'] cannot be searched, because its value is resolved after the query has run. '
-                .'Pass a query closure — searchable(query: fn (Builder $query, string $search) => ...) — to search it yourself.'
+                .'Pass a query closure - searchable(query: fn (Builder $query, string $search) => ...) - to search it yourself.'
             );
         }
 

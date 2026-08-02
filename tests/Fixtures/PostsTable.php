@@ -38,7 +38,7 @@ class PostsTable extends Component implements HasActions, HasSchemas, HasTable
      * Lets a test override how record keys are derived, so BatchResolver's use
      * of $table->getRecordKey() (which delegates to this method) can be proven
      * to diverge from a naive (string) $record->getKey() when a component
-     * customizes it — the exact scenario Filament\Tables\Contracts\HasTable
+     * customizes it - the exact scenario Filament\Tables\Contracts\HasTable
      * ::getTableRecordKey() exists to support.
      *
      * @var (Closure(Model|array<string, mixed>): string)|null

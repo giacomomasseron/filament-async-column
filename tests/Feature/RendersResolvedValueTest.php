@@ -7,8 +7,8 @@ use GiacomoMasseroni\AsyncColumn\Tests\Fixtures\PostsTable;
 /**
  * AsyncColumn::getState() resolves its cache key via
  * $this->getLivewire()->getTableRecordKey(), so a bare AsyncColumn::make() throws
- * "not mounted to a table." Mount through PostsTable instead — the same path the
- * production BatchResolver (Task 5) uses via $table->getColumn($name) — so these
+ * "not mounted to a table." Mount through PostsTable instead - the same path the
+ * production BatchResolver (Task 5) uses via $table->getColumn($name) - so these
  * tests exercise the real code, not a standalone column that can never occur in
  * practice.
  */
@@ -78,7 +78,7 @@ it('renders a view with state and record available', function (): void {
  *
  * renderResolvedHtml() now delegates to TextColumn::toEmbeddedHtml() instead of
  * hand-rolling formatting/escaping, so the output is wrapped in TextColumn's own
- * `<div class="fi-ta-text fi-ta-text-item fi-size-sm">...</div>` — the exact wrapper
+ * `<div class="fi-ta-text fi-ta-text-item fi-size-sm">...</div>` - the exact wrapper
  * every other TextColumn cell gets. These assertions use toContain() (not toBe())
  * to check the formatted value survived, not the exact wrapper markup.
  */
@@ -158,7 +158,7 @@ it('renders array state as a list, with no PHP warning', function (): void {
  * The old hand-rolled formatter returned '' for a null state. Delegating to
  * toEmbeddedHtml() changes this: TextColumn's blank-state branch now renders an
  * (empty) `<div class="fi-ta-text">...</div>` placeholder wrapper instead. Both are
- * "no error, no visible text" — this test documents the new shape rather than
+ * "no error, no visible text" - this test documents the new shape rather than
  * asserting the old empty-string behavior.
  */
 it('handles a null resolved state without error', function (): void {
@@ -187,7 +187,7 @@ it('badge() and color() now visibly apply to the resolved state', function (): v
 /**
  * Regression for resolvedState() assigning a raw `null` to $this->getStateUsing.
  *
- * HasCellState::getState() branches on `$this->getStateUsing !== null` — a bare
+ * HasCellState::getState() branches on `$this->getStateUsing !== null` - a bare
  * null there does not mean "the resolved value is null", it means "there is no
  * state callback at all", so Filament falls through to getStateFromRecord() and
  * renders the record's own DB attribute instead of the (null) resolved value.

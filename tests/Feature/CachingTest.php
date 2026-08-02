@@ -57,7 +57,7 @@ it('busts the cache when the version changes', function (): void {
 
     // A regular closure, not an arrow function: an arrow function auto-captures
     // every variable referenced anywhere in its body BY VALUE, including ones a
-    // nested closure declares `use (&$calls)` for — so the nested closure would
+    // nested closure declares `use (&$calls)` for - so the nested closure would
     // bind to the arrow function's own by-value copy of $calls on each call,
     // never the outer $calls this test asserts on. Explicit `use (&$calls)` here
     // avoids that trap.

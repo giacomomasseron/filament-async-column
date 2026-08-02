@@ -61,13 +61,13 @@ class TestCase extends Orchestra
         // then resolves a fresh, empty instance, so component state (e.g. the error
         // bag) never round-trips and Livewire::test() fails on every render with
         // "ViewErrorBag::put(): Argument #2 ($bag) must be of type MessageBag, null
-        // given". Re-binding it as a singleton — after Support's provider has already
-        // registered, before providers boot — restores one shared instance per test
+        // given". Re-binding it as a singleton - after Support's provider has already
+        // registered, before providers boot - restores one shared instance per test
         // while keeping Filament's DataStoreOverride behaviour.
         //
         // Confirmed against filament/support 5.7.5 + livewire/livewire 4.3.4. Worth
         // retrying without this line next time either package is bumped, in case
-        // it's been fixed upstream — it's harmless to leave in either way, since it
+        // it's been fixed upstream - it's harmless to leave in either way, since it
         // degrades to a no-op re-declaration of an already-correct binding.
         $app->singleton(DataStore::class, DataStoreOverride::class);
     }
