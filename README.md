@@ -223,6 +223,17 @@ return [
 ];
 ```
 
+### `max_batch_size` bounds each request, not the request rate
+
+The cap limits how many resolvers one request can invoke. It does **not** limit how often
+those requests can be made — anyone holding a valid Livewire snapshot for a page can keep
+issuing them, each costing up to `max_batch_size` resolver invocations.
+
+If your resolvers call a paid, rate-limited, or otherwise expensive upstream service, treat
+that as you would any other authenticated endpoint and apply your own throttling — Laravel's
+`throttle` middleware on the Livewire update route, a per-user rate limiter inside the
+resolver, or `->cacheFor()` so repeat work is served from cache rather than the upstream.
+
 ## Testing
 
 ```bash
