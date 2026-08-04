@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\Cache;
 use LogicException;
+use ReflectionMethod;
 use RuntimeException;
 use Throwable;
 
@@ -194,14 +195,26 @@ class BatchResolver
      */
     protected function scopedQuery(HasTable $component, Table $table): Builder|Relation|null
     {
-        $query = $table->getQuery(isResolvingRecord: true);
+        $getQueryMethod = new ReflectionMethod($table, 'getQuery');
+        $getQuerySupportsIsResolvingRecord = collect($getQueryMethod->getParameters())
+            ->contains(fn ($p) => $p->getName() === 'isResolvingRecord');
+
+        $query = $getQuerySupportsIsResolvingRecord
+            ? $table->getQuery(isResolvingRecord: true)
+            : $table->getQuery();
 
         if ($query === null) {
             return null;
         }
 
         if (method_exists($component, 'applyFiltersToTableQuery')) {
-            return invade($component)->applyFiltersToTableQuery($query, isResolvingRecord: true);
+            $applyFiltersMethod = new ReflectionMethod($component, 'applyFiltersToTableQuery');
+            $applyFiltersSupportsIsResolvingRecord = collect($applyFiltersMethod->getParameters())
+                ->contains(fn ($p) => $p->getName() === 'isResolvingRecord');
+
+            return $applyFiltersSupportsIsResolvingRecord
+                ? invade($component)->applyFiltersToTableQuery($query, isResolvingRecord: true)
+                : invade($component)->applyFiltersToTableQuery($query);
         }
 
         if (method_exists($component, 'filterTableQuery')) {
