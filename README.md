@@ -1,5 +1,10 @@
 # Filament Async Column
 
+[![Latest Version on Packagist](https://img.shields.io/packagist/v/giacomomasseron/filament-async-column.svg?style=flat-square)](https://packagist.org/packages/giacomomasseron/filament-async-column)
+[![GitHub Tests Action Status](https://img.shields.io/github/actions/workflow/status/giacomomasseron/filament-async-column/run-tests.yml?branch=main&label=tests&style=flat-square)](https://github.com/giacomomasseron/filament-async-column/actions?query=workflow%3Arun-tests+branch%3Amain)
+[![GitHub Code Style Action Status](https://img.shields.io/github/actions/workflow/status/giacomomasseron/filament-async-column/fix-php-code-style-issues.yml?branch=main&label=code%20style&style=flat-square)](https://github.com/giacomomasseron/filament-async-column/actions?query=workflow%3A%22Fix+PHP+code+style+issues%22+branch%3Amain)
+[![Total Downloads](https://img.shields.io/packagist/dt/giacomomasseron/filament-async-column.svg?style=flat-square)](https://packagist.org/packages/giacomomasseron/filament-async-column)
+
 A [Filament](https://filamentphp.com) v5 table column that renders instantly and resolves its
 value afterwards, in **one batched follow-up request** - instead of making every page load wait
 on however many expensive lookups your columns need (API calls, remote aggregates, anything
