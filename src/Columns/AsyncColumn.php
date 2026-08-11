@@ -4,8 +4,8 @@ namespace GiacomoMasseroni\AsyncColumn\Columns;
 
 use Carbon\CarbonInterface;
 use Closure;
-use DateTimeInterface;
 use Filament\Tables\Columns\TextColumn;
+use GiacomoMasseroni\AsyncColumn\Resolution\CellCache;
 use GiacomoMasseroni\AsyncColumn\Resolution\CellToken;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Model;
@@ -125,15 +125,7 @@ class AsyncColumn extends TextColumn
 
     public function getCacheVersion(): string
     {
-        $version = $this->evaluate($this->cacheVersion);
-
-        if ($version === null) {
-            return '';
-        }
-
-        return $version instanceof DateTimeInterface
-            ? $version->format('U')
-            : (string) $version;
+        return CellCache::version($this->evaluate($this->cacheVersion));
     }
 
     /**
@@ -143,13 +135,63 @@ class AsyncColumn extends TextColumn
      */
     public function getCacheKey(string $recordKey): string
     {
-        return implode(':', [
-            config('async-column.cache_prefix', 'async-column'),
+        return CellCache::key(
             $this->getLivewire()::class,
             $this->getName(),
             $recordKey,
             $this->getCacheVersion(),
-        ]);
+        );
+    }
+
+    /**
+     * Remove one or more cached cells written by ->cacheFor().
+     *
+     * Callable from anywhere - a model observer, a queued job, tinker - so it
+     * takes the key's parts rather than a column instance: outside a table
+     * render there is no configured column to ask, and $this->getLivewire() (the
+     * source of the component-class segment) is only bound during one.
+     *
+     * $recordKey must be the key the TABLE uses for that row - $table->
+     * getRecordKey($record), which is (string) $record->getKey() unless the
+     * component overrides getTableRecordKey(). Passing the model's raw primary
+     * key when the component customises that identity removes a key nothing
+     * wrote.
+     *
+     * Deliberately no return value: Repository::forget()'s bool means different
+     * things per store (the array store reports whether the key existed, Redis
+     * reports a DEL count), so surfacing it would be an unreliable signal that
+     * reads like a dependable "was it cached?" answer. Forgetting a key that was
+     * never written is a no-op, exactly as it is in Laravel's own cache.
+     *
+     * @param  scalar|array<int, scalar>  $recordKey  One record key, or many.
+     * @param  scalar|\DateTimeInterface|Closure|null  $version  The ->cacheVersion() this cell was written under. A Closure is accepted by the signature only so it can be rejected with an explanation - cacheVersion() itself takes mixed, so passing the same value through here is the obvious thing to try.
+     */
+    public static function forget(
+        string $componentClass,
+        string $columnName,
+        mixed $recordKey,
+        mixed $version = null,
+    ): void {
+        // A Closure would be stringified into something meaningless, removing a
+        // key nothing ever wrote - a silent no-op the caller reads as a
+        // successful invalidation. There is no column instance and no $record to
+        // evaluate it against here, so this is unfixable rather than merely
+        // unimplemented, and saying so beats failing quietly.
+        if ($version instanceof Closure) {
+            throw new LogicException(
+                'AsyncColumn::forget() cannot accept a Closure as its $version, because there is no column '
+                .'instance or record to evaluate it against outside of a table render. Pass the already-resolved '
+                .'value instead. If the version genuinely depends on request state (e.g. cacheVersion(fn () => '
+                .'auth()->id())), those keys cannot be targeted from here at all - change the version to bust them.'
+            );
+        }
+
+        $store = CellCache::store();
+        $versionSegment = CellCache::version($version);
+
+        foreach (is_array($recordKey) ? $recordKey : [$recordKey] as $key) {
+            $store->forget(CellCache::key($componentClass, $columnName, (string) $key, $versionSegment));
+        }
     }
 
     /**

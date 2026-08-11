@@ -12,7 +12,6 @@ use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
-use Illuminate\Support\Facades\Cache;
 use LogicException;
 use ReflectionMethod;
 use RuntimeException;
@@ -371,6 +370,6 @@ class BatchResolver
 
     protected function cache(): Repository
     {
-        return Cache::store(config('async-column.cache_store'));
+        return CellCache::store();
     }
 }
