@@ -374,6 +374,11 @@ responses to probe which columns exist.
 > that was already in flight vanish out from under its batch request the moment someone typed into
 > the search box.
 
+### Reporting a vulnerability
+
+Please don't open a public issue. Follow the [security policy](.github/SECURITY.md) to report it
+privately.
+
 ## Configuration
 
 Everything has a working default. To change any of it, publish the config file:
