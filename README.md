@@ -153,10 +153,37 @@ AsyncColumn::make('inventory_level')
     ->whenVisible();
 ```
 
+### Pick a different loader, or color it
+
+Four loaders ship with the package, all pure CSS: `skeleton` (the default), `spinner`, `dots` and
+`bar`. `loaderColor()` takes any Filament color name - `primary`, `danger`, or one you've
+registered with `FilamentColor::register()` - so the loader follows the panel's palette in both
+light and dark mode:
+
+```php
+use GiacomoMasseroni\AsyncColumn\Enums\Loader;
+
+AsyncColumn::make('shipment_eta')
+    ->resolveUsing(fn ($record) => $this->carrier->eta($record))
+    ->loader(Loader::Spinner) // or 'spinner'
+    ->loaderColor('primary');
+```
+
+Both also take a closure, evaluated per row with `$record`. The loader color is deliberately
+separate from the column's own `color()`: that one usually depends on the resolved value, which
+doesn't exist yet while the cell is loading.
+
+To use one loader everywhere, set it once in a service provider's `boot()` method:
+
+```php
+AsyncColumn::configureUsing(fn (AsyncColumn $column) => $column->loader(Loader::Dots));
+```
+
 ### Change what the cell shows while loading, or when it fails
 
-The default is a CSS skeleton while loading and a translated "Could not load" on failure. Both
-take a string, an `Htmlable`, or a closure:
+The default is the loader above while loading and a translated "Could not load" on failure. Both
+can be replaced with a string, an `Htmlable` (your own spinner image, say), or a closure. A
+`loadingState()` takes the place of the loader entirely:
 
 ```php
 AsyncColumn::make('shipment_eta')
@@ -207,7 +234,9 @@ you want for record-specific data and a problem for viewer-specific data.
 | Method | Description |
 |---|---|
 | `resolveUsing(Closure $callback)` | **Required.** Supplies the resolved value. Receives `$record` (and other Filament-standard parameters via dependency injection). |
-| `loadingState(string \| Htmlable \| Closure \| null $state)` / `loadingStateUsing(Closure $callback)` | What's shown in the cell before it resolves. Defaults to a CSS skeleton (`<span class="fi-async-column-skeleton">`). |
+| `loadingState(string \| Htmlable \| Closure \| null $state)` / `loadingStateUsing(Closure $callback)` | What's shown in the cell before it resolves. Defaults to the `loader()` preset, a CSS skeleton (`<span class="fi-async-column-skeleton">`) unless you pick another. |
+| `loader(Loader \| string \| Closure \| null $loader)` | Which built-in CSS loader to show while the cell resolves: `skeleton` (the default), `spinner`, `dots` or `bar`. An unknown name throws. Has no effect when `loadingState()` is set. |
+| `loaderColor(string \| Closure \| null $color)` | Colors the loader with a Filament palette color (any registered color name). `null`, the default, keeps it neutral gray. |
 | `errorState(string \| Htmlable \| Closure \| null $state)` / `errorStateUsing(Closure $callback)` | What's shown if the resolver throws. The default is a translated "Could not load". `errorStateUsing()`'s closure is the *only* place the underlying `Throwable` is ever exposed - see [Security](#security). |
 | `whenVisible(bool \| Closure $condition = true)` | Defers resolving a column's cells until they scroll into the viewport (via `IntersectionObserver`), instead of resolving them immediately after paint. Useful for columns far down a long table. |
 | `retryable(bool \| Closure $condition = true)` | Whether a failed cell can be clicked to retry. Defaults to `true`. |

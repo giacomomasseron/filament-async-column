@@ -5,11 +5,13 @@ namespace GiacomoMasseroni\AsyncColumn\Columns;
 use Carbon\CarbonInterface;
 use Closure;
 use Filament\Tables\Columns\TextColumn;
+use GiacomoMasseroni\AsyncColumn\Enums\Loader;
 use GiacomoMasseroni\AsyncColumn\Resolution\CellCache;
 use GiacomoMasseroni\AsyncColumn\Resolution\CellToken;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\HtmlString;
+use InvalidArgumentException;
 use LogicException;
 use Throwable;
 
@@ -18,6 +20,10 @@ class AsyncColumn extends TextColumn
     protected ?Closure $resolveUsing = null;
 
     protected string|Htmlable|Closure|null $loadingState = null;
+
+    protected Loader|string|Closure|null $loader = null;
+
+    protected string|Closure|null $loaderColor = null;
 
     protected string|Htmlable|Closure|null $errorState = null;
 
@@ -55,8 +61,72 @@ class AsyncColumn extends TextColumn
 
     public function getLoadingState(): string|Htmlable|null
     {
-        return $this->evaluate($this->loadingState)
-            ?? new HtmlString('<span class="fi-async-column-skeleton" aria-hidden="true"></span>');
+        return $this->evaluate($this->loadingState) ?? $this->getLoaderHtml();
+    }
+
+    public function loader(Loader|string|Closure|null $loader): static
+    {
+        $this->loader = $loader;
+
+        return $this;
+    }
+
+    public function getLoader(): Loader
+    {
+        $loader = $this->evaluate($this->loader);
+
+        if ($loader === null || $loader instanceof Loader) {
+            return $loader ?? Loader::Skeleton;
+        }
+
+        if (is_string($loader) && ($preset = Loader::tryFrom($loader)) instanceof Loader) {
+            return $preset;
+        }
+
+        throw new InvalidArgumentException(
+            'AsyncColumn ['.$this->getName().'] has no loader named ['.(is_string($loader) ? $loader : get_debug_type($loader)).']. '
+            .'Use one of: '.implode(', ', array_column(Loader::cases(), 'value')).'.'
+        );
+    }
+
+    /**
+     * Deliberately not inherited from TextColumn's color(): that is usually a
+     * closure over the resolved state, and evaluating it here - while the cell
+     * is still loading - would run the very resolution this column defers.
+     */
+    public function loaderColor(string|Closure|null $color): static
+    {
+        $this->loaderColor = $color;
+
+        return $this;
+    }
+
+    /**
+     * The color name reduced to a class-safe string (the same sanitisation as
+     * Filament's ColorManager::getComponentClasses()), because it's
+     * concatenated straight into the loader's markup.
+     */
+    public function getLoaderColor(): ?string
+    {
+        $color = preg_replace('/[^a-zA-Z0-9_-]/', '', (string) $this->evaluate($this->loaderColor));
+
+        return blank($color) ? null : $color;
+    }
+
+    /**
+     * fi-color-{name} is Filament's own utility class: it gives the element the
+     * --color-50 ... --color-950 variables for that palette color (custom
+     * colors registered via FilamentColor included), which the CSS draws with.
+     */
+    protected function getLoaderHtml(): HtmlString
+    {
+        $loader = $this->getLoader();
+        $color = $this->getLoaderColor();
+
+        $classes = 'fi-async-column-'.$loader->value.($color === null ? '' : ' fi-color fi-color-'.$color);
+        $dots = $loader === Loader::Dots ? '<span></span><span></span><span></span>' : '';
+
+        return new HtmlString('<span class="'.$classes.'" aria-hidden="true">'.$dots.'</span>');
     }
 
     public function errorState(string|Htmlable|Closure|null $state): static
